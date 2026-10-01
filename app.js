@@ -16,6 +16,7 @@
     all_landlords: '全部房东', reset: '重置', export: '下载 CSV', pick_hint: '点击地图设定你的位置，按 Esc 取消。',
     gaps_intro: '下面每个物业都缺少租房需要的信息，或不同来源之间数据冲突。选一个房东，查看要问他们什么。',
     noshared: '不算合住（两人一间的每人价）',
+    appearance: '外观',
   };
   const ZHF = {
     props: n => `<b>${n}</b> 个物业`, units: n => `<b>${n}</b> 个户型/单元`,
@@ -71,11 +72,24 @@
 
   // ---------- map
   const map = L.map('map', { zoomControl: true, preferCanvas: true }).setView(LM['Bascom Hall'], 15);
-  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  let dark = window.IsthmusTheme ? IsthmusTheme.isDark() : false;
   const esri = n => `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/${n}/MapServer/tile/{z}/{y}/{x}`;
   const ESRI_ATTR = 'Tiles &copy; <a href="https://www.esri.com/">Esri</a>, HERE, Garmin, &copy; OpenStreetMap contributors';
-  L.tileLayer(esri(dark ? 'World_Dark_Gray_Base' : 'World_Light_Gray_Base'), { maxZoom: 20, maxNativeZoom: 16, attribution: ESRI_ATTR }).addTo(map);
-  L.tileLayer(esri(dark ? 'World_Dark_Gray_Reference' : 'World_Light_Gray_Reference'), { maxZoom: 20, maxNativeZoom: 16, pane: 'shadowPane' }).addTo(map);
+  let baseTiles, refTiles;
+  function setTiles() {
+    if (baseTiles) { baseTiles.remove(); refTiles.remove(); }
+    baseTiles = L.tileLayer(esri(dark ? 'World_Dark_Gray_Base' : 'World_Light_Gray_Base'), { maxZoom: 20, maxNativeZoom: 16, attribution: ESRI_ATTR }).addTo(map);
+    refTiles = L.tileLayer(esri(dark ? 'World_Dark_Gray_Reference' : 'World_Light_Gray_Reference'), { maxZoom: 20, maxNativeZoom: 16, pane: 'shadowPane' }).addTo(map);
+  }
+  setTiles();
+  if (window.IsthmusTheme) {
+    IsthmusTheme.onChange(() => {
+      const d = IsthmusTheme.isDark();
+      if (d !== dark) { dark = d; setTiles(); }
+      drawRings(); renderMarkers(); renderLegend();
+      if (state.sel) select(state.sel, false);
+    });
+  }
   const ringLayer = L.layerGroup().addTo(map);
   const markerLayer = L.layerGroup().addTo(map);
   const tagLayer = L.layerGroup().addTo(map);
