@@ -166,11 +166,53 @@
     return out;
   }
 
+  // ---------- anonymous usage events (public build only; #notrack opts this browser out)
+  const TRACK = META.track;
+  if (/notrack/.test(location.hash)) safeSet('notrack', '1');
+  const tracking = !!TRACK && !safeGet('notrack') && location.protocol === 'https:';
+  const rid = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => (b % 36).toString(36)).join('');
+  let vid = safeGet('vid');
+  if (!vid) { vid = rid(8); safeSet('vid', vid); }
+  const sid = rid(6);
+  const mobile = matchMedia('(max-width: 860px)').matches ? 1 : 0;
+  function track(e, extra = {}) {
+    if (!tracking) return;
+    const body = JSON.stringify({ v: 1, e, vid, sid, m: mobile, l: lang, ...extra });
+    try { fetch(`https://ntfy.sh/${TRACK}`, { method: 'POST', body, keepalive: true }).catch(() => { }); } catch { /* offline */ }
+  }
+  let lastSnap = null, snapTimer = null;
+  function filterSnapshot() {
+    const s = {};
+    if (state.q.trim()) s.q = state.q.trim().slice(0, 60);
+    if (state.beds.size) s.beds = [...state.beds].sort();
+    if (state.basis !== 'bed') s.basis = state.basis;
+    if (state.price < (state.basis === 'bed' ? 3000 : 12000)) s.price = state.price;
+    if (state.dist < 2) s.dist = state.dist;
+    if (state.ref !== 'Bascom Hall') s.ref = refSel.value === '__mine' ? 'custom' : state.ref;
+    if (state.term) s.term = state.term;
+    if (state.sort !== 'dist') s.sort = state.sort;
+    if (state.landlord) s.landlord = state.landlord;
+    const c = Object.keys(state.checks).filter(k => state.checks[k]);
+    if (c.length) s.checks = c;
+    return s;
+  }
+  function trackFilters() {
+    if (!tracking) return;
+    if (lastSnap === null) { lastSnap = JSON.stringify(filterSnapshot()); return; }
+    clearTimeout(snapTimer);
+    snapTimer = setTimeout(() => {
+      const s = filterSnapshot(), j = JSON.stringify(s);
+      if (j !== lastSnap && Object.keys(s).length) track('filter', { f: s, n: current.length });
+      lastSnap = j;
+    }, 2500);
+  }
+
   // ---------- render
   let current = [];
   const markers = new Map();
   function render() {
     current = filtered();
+    trackFilters();
     $('count').textContent = F().count(current.length);
     const noCap = state.price >= (state.basis === 'bed' ? 3000 : 12000);
     $('price-lbl').innerHTML = noCap ? (lang === 'zh' ? '价格<b>不限</b>' : 'Price: <b>any</b>') : F().price_lbl(money(state.price), state.basis);
@@ -271,10 +313,12 @@
     return t;
   }
 
+  const opened = new Set();
   function select(id, pan = true) {
     state.sel = id;
     const p = P.find(x => x.id === id);
     if (!p) return;
+    if (!opened.has(id)) { opened.add(id); track('open', { p: id, d: Math.round(p.dist * 100) / 100 }); }
     const d = miles(state.refPt, [p.lat, p.lng]);
     const zh = lang === 'zh';
     const ls = p._ls && current.includes(p) ? p._ls : p.listings;
@@ -419,6 +463,7 @@
     const blob = new Blob(['﻿' + rows.join('\n')], { type: 'text/csv' });
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'madison-rentals.csv' });
     a.click(); URL.revokeObjectURL(a.href);
+    track('csv', { n: current.length });
   };
 
   // ---------- legend + header stats
@@ -436,6 +481,7 @@
   document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
     document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
     document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + t.dataset.view));
+    if (t.dataset.view !== 'map') track('tab', { t: t.dataset.view });
     if (t.dataset.view === 'map') setTimeout(() => map.invalidateSize(), 0);
     if (t.dataset.view === 'gaps') renderGaps();
     if (t.dataset.view === 'sources') renderSources();
@@ -502,6 +548,7 @@
       ${ps.map(p => `<tr><td><a data-go="${esc(p.id)}">${esc(p.name ? p.name + ' — ' : '')}${esc(p.address || '')}</a></td><td>${esc((p.gaps || []).join(', ') || '—')}</td><td>${esc([...(p.conflicts || []), ...(p.stale || [])].join('; ') || '—')}</td></tr>`).join('')}
       </tbody></table>`;
     $('copy-draft').onclick = async () => {
+      track('draft', { ll });
       try { await navigator.clipboard.writeText($('draft').value); $('copy-draft').textContent = zh ? '已复制' : 'Copied'; }
       catch { $('draft').select(); }
     };
@@ -530,12 +577,16 @@
       <p>Walking times assume 1.25× the straight-line distance at 3 mph. Treat them as estimates.</p>`;
     $('sources').innerHTML += `<h2>${zh ? '各来源条数' : 'Rows by source'}</h2><table><tbody>${rows}</tbody></table>
       <h2>${zh ? '各房东物业数' : 'Properties by landlord'}</h2><table><tbody>${llRows}</tbody></table>
-      ${META.no_geo && META.no_geo.length ? `<h2>${zh ? '无法定位' : 'Could not be placed on the map'}</h2><ul>${META.no_geo.map(([a, b]) => `<li>${esc(a)}: ${esc(b)}</li>`).join('')}</ul>` : ''}`;
+      ${META.no_geo && META.no_geo.length ? `<h2>${zh ? '无法定位' : 'Could not be placed on the map'}</h2><ul>${META.no_geo.map(([a, b]) => `<li>${esc(a)}: ${esc(b)}</li>`).join('')}</ul>` : ''}
+      ${TRACK ? `<h2>${zh ? '使用统计' : 'Usage counts'}</h2><p>${zh
+        ? '为了改进这个页面，它会匿名记录打开了哪些物业、用了哪些筛选和搜索词。不记录姓名、IP 地址或位置，不使用 cookie，浏览器里只存一个随机编号。'
+        : 'To improve this page it records, anonymously, which properties are opened and which filters and searches are used. No names, IP addresses or locations are stored and no cookies are set; the browser keeps only a random ID.'}</p>` : ''}`;
   }
 
   // ---------- language
   $('lang').onclick = () => {
     lang = lang === 'zh' ? 'en' : 'zh'; safeSet('lang', lang); applyLang(); renderLegend(); render();
+    track('lang', { to: lang });
     if ($('view-gaps').classList.contains('active')) renderGaps();
     if ($('view-sources').classList.contains('active')) renderSources();
     if (state.sel) select(state.sel, false);
@@ -545,6 +596,9 @@
   renderLegend();
   drawRings();
   render();
+  let refHost = '';
+  try { refHost = document.referrer ? new URL(document.referrer).hostname : ''; } catch { /* bad referrer */ }
+  track('view', { ref: refHost, w: innerWidth, deep: (location.hash.match(/p=([^&]+)/) || [])[1] || undefined });
 
   // Admin entry + deep link (#p=<id>) when served by server.py
   if (location.protocol.startsWith('http')) {
