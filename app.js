@@ -8,15 +8,18 @@
   const ZH = {
     tagline: 'UW–Madison 周边租房', tab_map: '地图', tab_gaps: '缺失信息', tab_sources: '数据来源',
     search_ph: '街道、楼名或房东', bedrooms: '卧室数', studio: '单间', per_person: '每人', whole_unit: '整套',
-    pick: '在地图上选我自己的位置', lease: '租期', term_any: '不限', term_2728: '2027 秋季（2027–28）',
+    lease: '租期', term_any: '不限', term_2728: '2027 秋季（2027–28）',
     term_now: '现在 / 2026–27 和转租', term_unknown: '未说明', sort: '排序', sort_dist: '最近',
     sort_price: '每人最便宜', sort_rent: '总租金最低', more: '更多筛选', f_priced: '有公开价格',
     f_heat: '含暖气', f_allutil: '全包水电', f_net: '含网络', f_cats: '可养猫', f_dogs: '可养狗',
     f_inunit: '室内洗衣机', f_parking: '提供停车', f_furn: '带家具', f_ac: '有空调', landlord: '房东',
-    all_landlords: '全部房东', reset: '重置', export: '下载 CSV', pick_hint: '点击地图设定你的位置，按 Esc 取消。',
+    all_landlords: '全部房东', reset: '重置', export: '下载 CSV', pick_hint: '点地图选一个位置。', pick_cancel: '取消',
     gaps_intro: '下面每个物业都缺少租房需要的信息，或不同来源之间数据冲突。选一个房东，查看要问他们什么。',
     noshared: '不算合住（两人一间的每人价）',
     appearance: '外观', ftoggle: '价格、距离等筛选',
+    places: '我常去的地方', place_add: '＋ 添加地点', place_q_ph: '楼名、店名或街道地址', place_search: '搜索',
+    place_map: '在地图上点选', place_gps: '用我现在的位置', place_name_ph: '起个名字，比如 实验室、健身房',
+    place_save: '保存', place_cancel: '取消',
   };
   const ZHF = {
     props: n => `<b>${n}</b> 个物业`, units: n => `<b>${n}</b> 个户型/单元`,
@@ -67,7 +70,7 @@
   const LM = META.landmarks;
   const state = {
     q: '', beds: new Set(), basis: 'bed', price: 3000, dist: 2, ref: 'Bascom Hall', refPt: LM['Bascom Hall'],
-    term: '', sort: 'dist', landlord: '', checks: {}, sel: null, noShared: safeGet('noshared') !== '0',
+    term: '', sort: 'dist', landlord: '', checks: {}, sel: null, noShared: safeGet('noshared') !== '0', refKey: 'Bascom Hall',
   };
 
   // ---------- map
@@ -77,19 +80,37 @@
   const home = near.length ? [med(near.map(p => p.lat)), med(near.map(p => p.lng))] : LM['Bascom Hall'];
   const map = L.map('map', { zoomControl: true, preferCanvas: true }).setView(home, matchMedia('(max-width: 860px)').matches ? 14 : 15);
   let dark = window.IsthmusTheme ? IsthmusTheme.isDark() : false;
-  const esri = n => `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/${n}/MapServer/tile/{z}/{y}/{x}`;
-  const ESRI_ATTR = 'Tiles &copy; <a href="https://www.esri.com/">Esri</a>, HERE, Garmin, &copy; OpenStreetMap contributors';
-  let baseTiles, refTiles;
+  const basemap = () => (window.IsthmusTheme ? IsthmusTheme.basemap() : 'color');
+  const esri = n => `https://server.arcgisonline.com/ArcGIS/rest/services/${n}/MapServer/tile/{z}/{y}/{x}`;
+  const ESRI = 'Tiles &copy; <a href="https://www.esri.com/">Esri</a>';
+  // Basemaps: color (topographic, campus buildings named), gray canvas, satellite with street labels
+  const BASEMAPS = {
+    color: d => [L.tileLayer(esri('World_Topo_Map'), { maxZoom: 20, maxNativeZoom: 19, className: d ? 'bm-night' : '', attribution: `${ESRI} — Esri, HERE, Garmin, USGS, &copy; OpenStreetMap contributors, GIS User Community` })],
+    gray: d => [
+      L.tileLayer(esri(`Canvas/${d ? 'World_Dark_Gray_Base' : 'World_Light_Gray_Base'}`), { maxZoom: 20, maxNativeZoom: 16, attribution: `${ESRI}, HERE, Garmin, &copy; OpenStreetMap contributors` }),
+      L.tileLayer(esri(`Canvas/${d ? 'World_Dark_Gray_Reference' : 'World_Light_Gray_Reference'}`), { maxZoom: 20, maxNativeZoom: 16, pane: 'shadowPane' }),
+    ],
+    satellite: d => [
+      L.tileLayer(esri('World_Imagery'), { maxZoom: 20, maxNativeZoom: 19, className: d ? 'bm-dim' : '', attribution: `${ESRI} — Esri, Maxar, Earthstar Geographics, GIS User Community` }),
+      L.tileLayer(esri('Reference/World_Transportation'), { maxZoom: 20, maxNativeZoom: 19, pane: 'shadowPane' }),
+      L.tileLayer(esri('Reference/World_Boundaries_and_Places'), { maxZoom: 20, maxNativeZoom: 19, pane: 'shadowPane' }),
+    ],
+  };
+  let tiles = [], tileKey = '';
   function setTiles() {
-    if (baseTiles) { baseTiles.remove(); refTiles.remove(); }
-    baseTiles = L.tileLayer(esri(dark ? 'World_Dark_Gray_Base' : 'World_Light_Gray_Base'), { maxZoom: 20, maxNativeZoom: 16, attribution: ESRI_ATTR }).addTo(map);
-    refTiles = L.tileLayer(esri(dark ? 'World_Dark_Gray_Reference' : 'World_Light_Gray_Reference'), { maxZoom: 20, maxNativeZoom: 16, pane: 'shadowPane' }).addTo(map);
+    const bm = BASEMAPS[basemap()] ? basemap() : 'color';
+    const key = bm + (dark ? ':dark' : '');
+    if (key === tileKey) return;
+    tiles.forEach(t => t.remove());
+    tiles = BASEMAPS[bm](dark);
+    tiles.forEach(t => t.addTo(map));
+    tileKey = key;
   }
   setTiles();
   if (window.IsthmusTheme) {
     IsthmusTheme.onChange(() => {
-      const d = IsthmusTheme.isDark();
-      if (d !== dark) { dark = d; setTiles(); }
+      dark = IsthmusTheme.isDark();
+      setTiles();
       drawRings(); renderMarkers(); renderLegend();
       if (state.sel) select(state.sel, false);
     });
@@ -108,6 +129,55 @@
     const m = markers.get(p.id);
     if (m) m.bringToFront();
     L.circleMarker([p.lat, p.lng], { radius: 15, color: cssVar('ink'), weight: 2.5, fill: false, interactive: false }).addTo(selLayer);
+  }
+
+  // ---------- bus stops (Madison Metro GTFS via scraper/transit.py)
+  const TR = window.TRANSIT && window.TRANSIT.stops ? window.TRANSIT : null;
+  const BUS_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M4 1h8a2 2 0 0 1 2 2v8a1 1 0 0 1-1 1v1.5a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5V12H5v1.5a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5V12a1 1 0 0 1-1-1V3a2 2 0 0 1 2-2zM4 3v4h8V3zm1 6.2a.9.9 0 1 0 0 1.8a.9.9 0 1 0 0-1.8zm6 0a.9.9 0 1 0 0 1.8a.9.9 0 1 0 0-1.8z"/></svg>';
+  const routeOrder = r => (/^\d+$/.test(r) ? 1000 + +r : r.charCodeAt(0));
+  const routeBadges = rs => [...rs].sort((a, b) => routeOrder(a) - routeOrder(b)).map(r => {
+    const c = (TR && TR.routes[r]) || ['#24476B', '#FFFFFF', ''];
+    return `<span class="rt" style="background:${c[0]};color:${c[1]}"${c[2] ? ` title="${esc(c[2])}"` : ''}>${esc(r)}</span>`;
+  }).join('');
+  map.createPane('bus').style.zIndex = 450;
+  const busLayer = L.layerGroup();
+  let showBus = safeGet('bus') !== '0';
+  if (TR) TR.stops.forEach(([lat, lng, name, rs]) => {
+    const m = L.marker([lat, lng], { pane: 'bus', keyboard: false, icon: L.divIcon({ className: '', html: `<span class="bus-stop">${BUS_SVG}</span>`, iconSize: [16, 16], iconAnchor: [8, 8] }) });
+    m.bindTooltip(`<b>${esc(name)}</b><div class="rts">${routeBadges(rs.split(' '))}</div>`, { direction: 'top', offset: [0, -8], className: 'bus-tip' });
+    m.on('click', () => m.openTooltip());
+    m.addTo(busLayer);
+  });
+  // Stops only from street level up
+  function syncBus() {
+    const on = !!TR && showBus && map.getZoom() >= 16;
+    if (on && !map.hasLayer(busLayer)) busLayer.addTo(map);
+    else if (!on && map.hasLayer(busLayer)) busLayer.remove();
+  }
+  map.on('zoomend', syncBus);
+  syncBus();
+  // Nearest stops; both sides of a street share a name and are merged
+  function nearStops(pt, max = 0.35) {
+    if (!TR) return [];
+    const by = new Map();
+    TR.stops.forEach(([lat, lng, name, rs]) => {
+      const d = miles(pt, [lat, lng]);
+      if (d > max) return;
+      const g = by.get(name) || { name, d, routes: new Set() };
+      g.d = Math.min(g.d, d);
+      rs.split(' ').forEach(r => g.routes.add(r));
+      by.set(name, g);
+    });
+    return [...by.values()].sort((a, b) => a.d - b.d).slice(0, 3);
+  }
+  function busBlock(p) {
+    if (!TR) return '';
+    const zh = lang === 'zh';
+    const ss = nearStops([p.lat, p.lng]);
+    const rows = ss.length
+      ? ss.map(s => `<div class="bus-row"><span class="bus-stop">${BUS_SVG}</span><span>${esc(s.name)} <small>${zh ? `步行约 ${Math.max(1, walkMin(s.d))} 分钟` : `${Math.max(1, walkMin(s.d))} min walk`}</small></span><span class="rts">${routeBadges(s.routes)}</span></div>`).join('')
+      : `<div class="bus-row"><span class="bus-stop">${BUS_SVG}</span><span>${zh ? '0.35 英里内没有公交站' : 'No bus stop within 0.35 mi'}</span></div>`;
+    return `<div class="bus" aria-label="${zh ? '附近公交站' : 'Nearby bus stops'}">${rows}</div>`;
   }
 
   function drawRings() {
@@ -166,7 +236,7 @@
     const out = [];
     for (const p of P) {
       p._d = miles(state.refPt, [p.lat, p.lng]);
-      if (p._d > state.dist) continue;
+      if (state.dist < 2 && p._d > state.dist) continue;
       if (q && !p._text.includes(q)) continue;
       if (state.landlord && p.landlord !== state.landlord) continue;
       if (c.heat && !p._heat) continue;
@@ -220,7 +290,7 @@
     if (state.basis !== 'bed') s.basis = state.basis;
     if (state.price < (state.basis === 'bed' ? 3000 : 12000)) s.price = state.price;
     if (state.dist < 2) s.dist = state.dist;
-    if (state.ref !== 'Bascom Hall') s.ref = refSel.value === '__mine' ? 'custom' : state.ref;
+    if (state.refKey !== 'Bascom Hall') s.ref = state.refKey.startsWith('place:') ? 'my place' : state.refKey;
     if (state.term) s.term = state.term;
     if (state.sort !== 'dist') s.sort = state.sort;
     if (state.landlord) s.landlord = state.landlord;
@@ -249,7 +319,7 @@
     $('count').textContent = F().count(current.length);
     const noCap = state.price >= (state.basis === 'bed' ? 3000 : 12000);
     $('price-lbl').innerHTML = noCap ? (lang === 'zh' ? '价格<b>不限</b>' : 'Price: <b>any</b>') : F().price_lbl(money(state.price), state.basis);
-    $('dist-lbl').innerHTML = F().dist_lbl(state.dist.toFixed(2).replace(/0$/, ''));
+    $('dist-lbl').innerHTML = state.dist >= 2 ? (lang === 'zh' ? '距离<b>不限</b> · 参考点' : 'Any distance from') : F().dist_lbl(state.dist.toFixed(2).replace(/0$/, ''));
     renderList();
     renderMarkers();
     const nMore = Object.values(state.checks).filter(Boolean).length + (state.landlord ? 1 : 0);
@@ -272,6 +342,7 @@
     $('ftoggle').setAttribute('aria-expanded', open);
   };
   $('viewswitch').onclick = () => {
+    if (picking) { pickFromList = false; stopPick(); }
     document.body.classList.toggle('m-list');
     setViewSwitch();
     if (!document.body.classList.contains('m-list')) setTimeout(() => map.invalidateSize(), 0);
@@ -306,7 +377,8 @@
     const html = current.slice(0, 400).map(p => {
       const title = p.name || p.address || '—';
       const sub = (p.name && p.address ? `<span>${esc(p.address)}</span>` : '')
-        + `<span>${p.landlord ? esc(p.landlord) + ' · ' : ''}<span class="nw">${distLabel(p._d)}</span></span>`;
+        + `<span>${p.landlord ? esc(p.landlord) + ' · ' : ''}<span class="nw">${distLabel(p._d)}</span></span>`
+        + placeDistLine(p);
       const has2728 = p._ls.some(x => x.term === '2027-28');
       const gapsN = (p.gaps || []).filter(g => !/not listed|rent basis/.test(g)).length;
       return `<li class="res${state.sel === p.id ? ' sel' : ''}" data-id="${esc(p.id)}" tabindex="0">
@@ -330,7 +402,7 @@
         color: b === 'p0' ? col : (dark ? '#10161D' : '#fff'), fillColor: col, fillOpacity: b === 'p0' ? 0.15 : 0.95,
       });
       m.bindTooltip(`${esc(p.name || p.address)}<br>${p._minBed != null ? money(p._minBed) + F().per_person : (p._minRent != null ? money(p._minRent) + F().per_unit : F().no_price)}`, { direction: 'top' });
-      m.on('click', () => select(p.id, false));
+      m.on('click', () => { if (!picking) select(p.id, false); });
       m.addTo(markerLayer);
       markers.set(p.id, m);
     });
@@ -347,7 +419,7 @@
       const b = bucket(p._minBed);
       L.marker([p.lat, p.lng], {
         icon: L.divIcon({ className: '', html: `<span class="price-tag${v === '?' ? ' none' : ''}" style="--c:var(--${b})">${v}</span>`, iconSize: [0, 0] }),
-      }).on('click', () => select(p.id, false)).addTo(tagLayer);
+      }).on('click', () => { if (!picking) select(p.id, false); }).addTo(tagLayer);
     });
   }
   map.on('zoomend moveend', renderTags);
@@ -561,7 +633,8 @@
       <p class="addr">${esc(p.name ? p.address || '' : '')}${p.name && p.address ? ', ' : ''}${esc(p.city)} ${esc(p.zip || '')} — ${esc(p.landlord || (zh ? '房东未知' : 'Landlord unknown'))}</p>
       ${overview ? `<div class="overview">${overview}</div>` : ''}
       <div class="contact">${contact || `<span class="nostate">${zh ? '没找到联系方式' : 'No contact found'}</span>`}</div>
-      <div class="walk">${F().walk(walkMin(d), d.toFixed(2), esc(state.ref))}${p.geo && p.geo.startsWith('nominatim') ? `<br><small>${zh ? '位置为近似值（按地址检索）' : 'Approximate location (geocoded)'}</small>` : ''}</div>
+      <div class="walk">${F().walk(walkMin(d), d.toFixed(2), esc(state.ref))}${p.geo && p.geo.startsWith('nominatim') ? `<br><small>${zh ? '位置为近似值（按地址检索）' : 'Approximate location (geocoded)'}</small>` : ''}${placesBlock(p)}</div>
+      ${busBlock(p)}
       ${photos ? `<div class="photos">${photos}</div>` : ''}
       ${issues.length ? `<div class="issues">${issues.join('')}</div>` : ''}
       <h4>${zh ? '户型与价格' : 'Units and prices'}</h4>
@@ -582,6 +655,7 @@
     if (li) { li.classList.add('sel'); if (!pan) li.scrollIntoView({ block: 'nearest' }); }
     markers.forEach((m, k) => m.setRadius(k === id ? 9 : 6));
     markSel();
+    drawPlaceLines(p);
     if (pan) map.panTo([p.lat, p.lng]);
   }
   function closeDrawer() {
@@ -591,28 +665,196 @@
     state.sel = null;
     markers.forEach(m => m.setRadius(6));
     markSel();
+    lineLayer.clearLayers();
     document.querySelectorAll('.res.sel').forEach(e => e.classList.remove('sel'));
   }
 
   // ---------- controls
   const refSel = $('ref');
-  Object.keys(LM).forEach(k => refSel.add(new Option(k, k)));
-  refSel.add(new Option('My point', '__mine'));
-  refSel.onchange = () => {
-    if (refSel.value === '__mine') { startPick(); return; }
-    state.ref = refSel.value; state.refPt = LM[refSel.value]; drawRings(); render();
+  // ---------- my places (saved in this browser only)
+  let places = [];
+  try { places = (JSON.parse(safeGet('places') || '[]') || []).filter(x => x && x.id && isFinite(x.lat) && isFinite(x.lng)); } catch { places = []; }
+  const savePlaces = () => safeSet('places', JSON.stringify(places));
+  const placeLayer = L.layerGroup().addTo(map);
+  const lineLayer = L.layerGroup().addTo(map);
+  const previewLayer = L.layerGroup().addTo(map);
+  const pinIcon = (name, cls) => L.divIcon({ className: '', html: `<div class="place-pin ${cls || ''}"><span>${esc(name)}</span></div>`, iconSize: [0, 0], iconAnchor: [0, 0] });
+  const mi2 = d => `${d.toFixed(2)}${lang === 'zh' ? ' 英里' : ' mi'}`;
+
+  function fillRef() {
+    refSel.innerHTML = '';
+    Object.keys(LM).forEach(k => refSel.add(new Option(k, k)));
+    if (places.length) {
+      const g = document.createElement('optgroup');
+      g.label = lang === 'zh' ? '我常去的地方' : 'My places';
+      places.forEach(pl => g.appendChild(new Option(pl.name, 'place:' + pl.id)));
+      refSel.appendChild(g);
+    }
+    refSel.value = state.refKey;
+  }
+  function setRef(key, save = true) {
+    const pl = key.startsWith('place:') ? places.find(x => 'place:' + x.id === key) : null;
+    if (pl) { state.ref = pl.name; state.refPt = [pl.lat, pl.lng]; }
+    else { if (!LM[key]) key = 'Bascom Hall'; state.ref = key; state.refPt = LM[key]; }
+    state.refKey = key;
+    refSel.value = key;
+    if (save) safeSet('ref', key);
+  }
+  function refChanged() { drawRings(); renderPlaces(); render(); if (state.sel) select(state.sel, false); }
+  refSel.onchange = () => { setRef(refSel.value); refChanged(); };
+
+  function renderPlaces() {
+    const zh = lang === 'zh';
+    placeLayer.clearLayers();
+    places.forEach(pl => {
+      const key = 'place:' + pl.id, on = state.refKey === key;
+      L.marker([pl.lat, pl.lng], { icon: pinIcon(pl.name, on ? 'ref' : ''), keyboard: false, zIndexOffset: 1000 })
+        .bindTooltip(on ? (zh ? '距离从这里算，再点一下取消' : 'Distances are measured from here; click again to stop') : (zh ? '点一下，从这里算距离' : 'Click to measure distances from here'), { direction: 'top', offset: [0, -30] })
+        .on('click', () => { setRef(on ? 'Bascom Hall' : key); refChanged(); })
+        .addTo(placeLayer);
+    });
+    $('place-chips').innerHTML = places.length
+      ? places.map(pl => `<span class="pchip${state.refKey === 'place:' + pl.id ? ' on' : ''}" data-id="${esc(pl.id)}"><button type="button" class="pc-name" title="${zh ? '从这里算距离' : 'Measure distances from here'}">${esc(pl.name)}</button><button type="button" class="pc-x" aria-label="${zh ? '删除' : 'Remove'} ${esc(pl.name)}">×</button></span>`).join('')
+      : `<span class="place-hint">${zh ? '加上实验室、健身房或打工的地方，就能看到每套房到那里的直线距离。' : 'Add your lab, gym or job to see how far each rental is from it.'}</span>`;
+  }
+  $('place-chips').onclick = e => {
+    const chip = e.target.closest('.pchip');
+    if (!chip) return;
+    const key = 'place:' + chip.dataset.id;
+    if (e.target.closest('.pc-x')) {
+      places = places.filter(x => 'place:' + x.id !== key);
+      savePlaces();
+      if (state.refKey === key) setRef('Bascom Hall');
+      fillRef(); refChanged(); renderLegend();
+      return;
+    }
+    setRef(state.refKey === key ? 'Bascom Hall' : key);
+    refChanged();
+    const pl = places.find(x => 'place:' + x.id === key);
+    if (pl && !phone.matches) map.panTo([pl.lat, pl.lng]);
   };
-  let picking = false;
-  function startPick() { picking = true; $('pick-hint').hidden = false; map.getContainer().style.cursor = 'crosshair'; }
-  function stopPick() { picking = false; $('pick-hint').hidden = true; map.getContainer().style.cursor = ''; }
-  $('pick').onclick = startPick;
+  // Straight-line distance from a rental to each place: list line, drawer rows, dashed lines on the map
+  const placeDistLine = p => places.length ? `<span class="pd">${places.slice(0, 3).map(pl => `<span class="nw">${esc(pl.name)} ${mi2(miles([p.lat, p.lng], [pl.lat, pl.lng]))}</span>`).join(' · ')}</span>` : '';
+  function placesBlock(p) {
+    const zh = lang === 'zh';
+    const others = places.filter(pl => 'place:' + pl.id !== state.refKey);
+    if (!others.length) return '';
+    return `<ul class="pdist">${others.map(pl => {
+      const d = miles([p.lat, p.lng], [pl.lat, pl.lng]);
+      return `<li><b>${esc(pl.name)}</b><span>${zh ? `直线 ${mi2(d)} · 步行约 ${walkMin(d)} 分钟` : `${mi2(d)} straight line · about ${walkMin(d)} min walk`}</span></li>`;
+    }).join('')}</ul>`;
+  }
+  function drawPlaceLines(p) {
+    lineLayer.clearLayers();
+    if (!p || !places.length) return;
+    const ink = cssVar('ink');
+    places.forEach(pl => {
+      const a = [p.lat, p.lng], b = [pl.lat, pl.lng];
+      L.polyline([a, b], { color: ink, weight: 2.5, opacity: 0.85, dashArray: '1 7', lineCap: 'round', interactive: false }).addTo(lineLayer);
+      L.marker([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], { interactive: false, keyboard: false, icon: L.divIcon({ className: '', html: `<span class="dist-tag">${mi2(miles(a, b))}</span>`, iconSize: [0, 0] }) }).addTo(lineLayer);
+    });
+  }
+
+  // Adding a place: search, click the map, or the device location
+  let picking = false, pickCb = null, pickFromList = false, pending = null, searchSeq = 0;
+  function startPick(cb) {
+    picking = true; pickCb = cb;
+    pickFromList = phone.matches && document.body.classList.contains('m-list');
+    if (pickFromList) { document.body.classList.remove('m-list'); setViewSwitch(); setTimeout(() => map.invalidateSize(), 0); }
+    $('pick-hint').hidden = false;
+    map.getContainer().classList.add('picking');
+  }
+  function stopPick() {
+    picking = false; pickCb = null;
+    $('pick-hint').hidden = true;
+    map.getContainer().classList.remove('picking');
+    if (pickFromList) { document.body.classList.add('m-list'); setViewSwitch(); pickFromList = false; }
+  }
+  $('pick-cancel').onclick = stopPick;
   map.on('click', e => {
     if (!picking) return;
-    state.ref = lang === 'zh' ? '我的位置' : 'my point';
-    state.refPt = [e.latlng.lat, e.latlng.lng];
-    refSel.value = '__mine';
-    stopPick(); drawRings(); render();
+    const cb = pickCb;
+    stopPick();
+    if (cb) cb(e.latlng);
   });
+  const placeMsg = t => { $('place-msg').textContent = t || ''; $('place-msg').hidden = !t; };
+  function resetPending() {
+    pending = null;
+    $('place-name-row').hidden = true;
+    $('place-results').innerHTML = '';
+    placeMsg('');
+    previewLayer.clearLayers();
+  }
+  function openPlaceForm(open) {
+    $('place-form').hidden = !open;
+    $('place-add').setAttribute('aria-expanded', open);
+    if (!open) { resetPending(); $('place-q').value = ''; if (picking) stopPick(); }
+  }
+  $('place-add').onclick = () => { const open = $('place-form').hidden; openPlaceForm(open); if (open && !phone.matches) $('place-q').focus(); };
+  function choose(lat, lng, name, how) {
+    resetPending();
+    pending = { lat, lng, how };
+    $('place-name').value = name || '';
+    $('place-name-row').hidden = false;
+    L.marker([lat, lng], { icon: pinIcon(name || (lang === 'zh' ? '新地点' : 'New place'), 'preview'), interactive: false, keyboard: false, zIndexOffset: 1100 }).addTo(previewLayer);
+    if (!phone.matches) map.setView([lat, lng], Math.max(map.getZoom(), 15));
+    setTimeout(() => { $('place-name').focus(); $('place-name').select(); }, 0);
+  }
+  $('place-save').onclick = () => {
+    if (!pending) return;
+    const zh = lang === 'zh';
+    const name = ($('place-name').value.trim() || (zh ? `地点 ${places.length + 1}` : `Place ${places.length + 1}`)).slice(0, 40);
+    places.push({ id: Date.now().toString(36), name, lat: +pending.lat.toFixed(6), lng: +pending.lng.toFixed(6) });
+    if (places.length > 10) places.shift();
+    savePlaces();
+    track('place', { how: pending.how, n: places.length });
+    openPlaceForm(false);
+    if (state.refKey.startsWith('place:') && !places.some(x => 'place:' + x.id === state.refKey)) setRef('Bascom Hall');
+    fillRef(); refChanged(); renderLegend();
+  };
+  $('place-name').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('place-save').click(); } };
+  $('place-cancel').onclick = resetPending;
+  $('place-map').onclick = () => startPick(ll => choose(ll.lat, ll.lng, '', 'map'));
+  $('place-gps').onclick = () => {
+    const zh = lang === 'zh';
+    if (!navigator.geolocation) { placeMsg(zh ? '这个浏览器不能提供位置。' : 'This browser cannot share its location.'); return; }
+    placeMsg(zh ? '正在定位…' : 'Finding your location…');
+    navigator.geolocation.getCurrentPosition(
+      pos => choose(pos.coords.latitude, pos.coords.longitude, zh ? '我的位置' : 'My location', 'gps'),
+      err => placeMsg(err.code === 1
+        ? (zh ? '没有定位权限。在浏览器设置里允许这个网站使用位置，再试一次。' : 'Location access is blocked. Allow it for this site in your browser settings, then try again.')
+        : (zh ? '没拿到位置。可以改用搜索，或在地图上点选。' : 'Could not get your location. Search or click the map instead.')),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+  };
+  async function searchPlace() {
+    const zh = lang === 'zh', q = $('place-q').value.trim();
+    if (!q) { $('place-q').focus(); return; }
+    const seq = ++searchSeq, ql = q.toLowerCase();
+    resetPending();
+    placeMsg(zh ? '搜索中…' : 'Searching…');
+    // Campus landmarks and rentals on this map first, then OpenStreetMap
+    const local = [
+      ...Object.entries(LM).filter(([k]) => k.toLowerCase().includes(ql)).map(([k, v]) => ({ name: k, sub: zh ? '校园地标' : 'Campus landmark', lat: v[0], lng: v[1] })),
+      ...P.filter(p => p._text.includes(ql)).slice(0, 3).map(p => ({ name: p.name || p.address, sub: p.name ? p.address : '', lat: p.lat, lng: p.lng })),
+    ];
+    let remote = [];
+    try {
+      const u = 'https://nominatim.openstreetmap.org/search?' + new URLSearchParams({ q, format: 'jsonv2', addressdetails: '1', limit: '6', countrycodes: 'us', viewbox: '-89.60,43.20,-89.20,42.95', bounded: '1', 'accept-language': 'en' });
+      const r = await fetch(u);
+      if (r.ok) remote = (await r.json()).map(h => {
+        const a = h.address || {};
+        const street = [a.house_number, a.road].filter(Boolean).join(' ');
+        return { name: h.name || street || (h.display_name || '').split(', ')[0], sub: [h.name ? street : '', a.city || a.town || a.village || ''].filter(Boolean).join(', '), lat: +h.lat, lng: +h.lon };
+      });
+    } catch { /* offline or blocked */ }
+    if (seq !== searchSeq) return;
+    const res = [...local, ...remote].slice(0, 8);
+    placeMsg(res.length ? '' : (zh ? '没找到。试试英文名或门牌地址，或者在地图上点选。' : 'No match. Try the English name or a street address, or click the map.'));
+    $('place-results').innerHTML = res.map((h, i) => `<li><button type="button" data-i="${i}"><b>${esc(h.name)}</b>${h.sub ? `<span>${esc(h.sub)}</span>` : ''}</button></li>`).join('');
+    $('place-results').onclick = e => { const b = e.target.closest('button[data-i]'); if (b) { const h = res[+b.dataset.i]; choose(h.lat, h.lng, h.name, 'search'); } };
+  }
+  $('place-search').onclick = searchPlace;
+  $('place-q').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); searchPlace(); } };
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') { if (picking) stopPick(); else closeDrawer(); }
   });
@@ -679,8 +921,11 @@
     $('legend').innerHTML = `<button class="lg-head" type="button" aria-expanded="${lgOpen}">${state.noShared ? (zh ? '每人最低月租（一人一间）' : 'Lowest rent, own bedroom') : (zh ? '每人最低月租（含合住）' : 'Lowest rent per person, incl. shared')}</button><div class="lg-body">` +
       [['p1', '< $900'], ['p2', '$900–1,199'], ['p3', '$1,200–1,499'], ['p4', '$1,500–1,899'], ['p5', '$1,900+']].map(([c, t]) => `<span class="row"><i style="background:var(--${c})"></i>${t}</span>`).join('') +
       `<span class="row"><i style="border:2px solid var(--p0)"></i>${zh ? '未公开价格' : 'No price posted'}</span>` +
-      `<span class="row"><i style="background:var(--badger);border-radius:0;transform:rotate(45deg)"></i>${zh ? '参考点（圈 = 0.5 英里）' : 'Reference point, rings every 0.5 mi'}</span></div>`;
+      `<span class="row"><i style="background:var(--badger);border-radius:0;transform:rotate(45deg)"></i>${zh ? '参考点（圈 = 0.5 英里）' : 'Reference point, rings every 0.5 mi'}</span>` +
+      (places.length ? `<span class="row"><i class="lg-place"></i>${zh ? '我常去的地方' : 'My places'}</span>` : '') +
+      (TR ? `<label class="row lg-bus"><input type="checkbox" id="lg-bus"${showBus ? ' checked' : ''}><span class="bus-stop sm">${BUS_SVG}</span>${zh ? '公交站（放大后显示）' : 'Bus stops (zoom in to see)'}</label>` : '') + '</div>';
     $('legend').querySelector('.lg-head').onclick = () => { safeSet('legend', $('legend').classList.contains('closed') ? '1' : '0'); renderLegend(); };
+    if ($('lg-bus')) $('lg-bus').onchange = e => { showBus = e.target.checked; safeSet('bus', showBus ? '1' : '0'); syncBus(); };
     $('stat-props').innerHTML = F().props(META.properties);
     $('stat-units').innerHTML = F().units(META.listings);
   }
@@ -779,11 +1024,13 @@
       <h2>数据从哪来</h2>
       <p>数据于 <b>${esc(META.built)}</b> 抓取，范围是 Bascom Hall 周围 ${META.radius_mi} 英里（直线）。房东官网优先；UW 校外租房列表（offcampushousing.wisc.edu）补充没有官网数据的房东。同一单元两边都有时，以官网为准，UW 那条隐藏。</p>
       <p>每个字段旁边的小标签说明它从哪来：<span class="prov official">官网</span> 房东网站的结构化字段；<span class="prov uw">UW 列表</span> UW 校外租房服务；<span class="prov inferred">推断</span> 从房源描述文字里读出来的；<span class="prov absent">未列出</span> 设施清单里没提，需要向房东确认。没有任何来源的值显示为 <span class="nostate">未说明</span>。</p>
-      <p>步行时间按直线距离 × 1.25、每小时 3 英里估算，只作参考。</p>` : `
+      <p>步行时间按直线距离 × 1.25、每小时 3 英里估算，只作参考。</p>
+      ${TR ? `<p>公交站和线路来自 Madison Metro 官方 GTFS 数据（${esc(TR.built)} 下载）。「我常去的地方」只存在你自己的浏览器里；搜索地址时，搜索词会发给 OpenStreetMap 的 Nominatim 服务。</p>` : ''}` : `
       <h2>Where the data comes from</h2>
       <p>Collected on <b>${esc(META.built)}</b> for everything within ${META.radius_mi} miles (straight line) of Bascom Hall. Landlord websites come first; the UW off-campus listing service (offcampushousing.wisc.edu) fills in landlords without a site we can read. When the same unit appears in both, the landlord site wins and the UW row is hidden.</p>
       <p>The small mark next to each value says where it came from: <span class="prov official">site</span> a structured field on the landlord website; <span class="prov uw">UW list</span> the UW off-campus listing service; <span class="prov inferred">inferred</span> read from the listing's description text; <span class="prov absent">not listed</span> missing from an otherwise complete amenity list, so worth confirming. Values no source gives show as <span class="nostate">Not stated</span>.</p>
-      <p>Walking times assume 1.25× the straight-line distance at 3 mph. Treat them as estimates.</p>`;
+      <p>Walking times assume 1.25× the straight-line distance at 3 mph. Treat them as estimates.</p>
+      ${TR ? `<p>Bus stops and routes come from Madison Metro's GTFS feed (downloaded ${esc(TR.built)}). Your places are saved only in this browser; address searches are sent to OpenStreetMap's Nominatim service.</p>` : ''}`;
     $('sources').innerHTML += `<h2>${zh ? '各来源条数' : 'Rows by source'}</h2><table><tbody>${rows}</tbody></table>
       <h2>${zh ? '各房东物业数' : 'Properties by landlord'}</h2><table><tbody>${llRows}</tbody></table>
       ${META.no_geo && META.no_geo.length ? `<h2>${zh ? '无法定位' : 'Could not be placed on the map'}</h2><ul>${META.no_geo.map(([a, b]) => `<li>${esc(a)}: ${esc(b)}</li>`).join('')}</ul>` : ''}
@@ -794,7 +1041,7 @@
 
   // ---------- language
   $('lang').onclick = () => {
-    lang = lang === 'zh' ? 'en' : 'zh'; safeSet('lang', lang); applyLang(); renderLegend(); render();
+    lang = lang === 'zh' ? 'en' : 'zh'; safeSet('lang', lang); applyLang(); fillRef(); renderPlaces(); renderLegend(); render();
     track('lang', { to: lang });
     if ($('view-gaps').classList.contains('active')) renderGaps();
     if ($('view-sources').classList.contains('active')) renderSources();
@@ -802,6 +1049,9 @@
   };
 
   applyLang();
+  setRef(safeGet('ref') || 'Bascom Hall', false);
+  fillRef();
+  renderPlaces();
   renderLegend();
   drawRings();
   render();

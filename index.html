@@ -39,6 +39,30 @@
           <button data-b="0" data-i18n="studio">Studio</button><button data-b="1">1</button><button data-b="2">2</button><button data-b="3">3</button><button data-b="4">4</button><button data-b="5">5+</button>
         </div>
       </div>
+      <div class="field places">
+        <div class="lbl-row">
+          <span class="lbl" data-i18n="places">My places</span>
+          <button class="linkish" id="place-add" type="button" aria-expanded="false" aria-controls="place-form" data-i18n="place_add">+ Add a place</button>
+        </div>
+        <div class="place-chips" id="place-chips"></div>
+        <div class="place-form" id="place-form" hidden>
+          <div class="pf-row">
+            <input id="place-q" type="search" autocomplete="off" data-i18n-ph="place_q_ph" placeholder="Building, business or street address">
+            <button class="btn small" id="place-search" type="button" data-i18n="place_search">Search</button>
+          </div>
+          <div class="pf-row">
+            <button class="linkish" id="place-map" type="button" data-i18n="place_map">Click a spot on the map</button>
+            <button class="linkish" id="place-gps" type="button" data-i18n="place_gps">Use my current location</button>
+          </div>
+          <ol class="place-results" id="place-results"></ol>
+          <p class="place-msg" id="place-msg" hidden></p>
+          <div class="pf-row" id="place-name-row" hidden>
+            <input id="place-name" type="text" maxlength="40" data-i18n-ph="place_name_ph" placeholder="Name it, e.g. Lab or Gym">
+            <button class="btn small" id="place-save" type="button" data-i18n="place_save">Save</button>
+            <button class="linkish" id="place-cancel" type="button" data-i18n="place_cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
       <button class="ftoggle" id="ftoggle" type="button" aria-expanded="false" aria-controls="fbody"><span><span data-i18n="ftoggle">Price, distance and more</span><span id="ftoggle-n" class="more-n"></span></span></button>
       <div class="fbody" id="fbody">
       <div class="field">
@@ -57,7 +81,6 @@
           <select id="ref" aria-label="Distance from"></select>
         </div>
         <input type="range" id="dist" min="0.25" max="2" step="0.05" value="2">
-        <button class="linkish" id="pick" data-i18n="pick">Pick my own point on the map</button>
       </div>
       <div class="field two">
         <label><span class="lbl" data-i18n="lease">Lease</span>
@@ -104,7 +127,7 @@
   <section class="mapwrap">
     <div id="map" aria-label="Map of rentals"></div>
     <div class="legend" id="legend"></div>
-    <div class="pick-hint" id="pick-hint" hidden data-i18n="pick_hint">Click the map to set your point. Press Esc to cancel.</div>
+    <div class="pick-hint" id="pick-hint" hidden><span data-i18n="pick_hint">Click the map to place it.</span><button type="button" id="pick-cancel" data-i18n="pick_cancel">Cancel</button></div>
     <article class="drawer" id="drawer" aria-live="polite" hidden></article>
   </section>
 </main>
@@ -126,6 +149,7 @@
 
 <button id="viewswitch" class="viewswitch" type="button"></button>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="data/transit.js"></script>
 <script src="data/properties.js"></script>
 <script src="app.js"></script>
 </body>

@@ -169,6 +169,9 @@ input[type=range] { width: 100%; accent-color: var(--lake); }
 .leaflet-control-attribution { font-size: 10px; line-height: 1.5; }
 /* Leaflet's plus-lighter tile blending leaves hairline seams on high-DPI screens */
 .leaflet-container img.leaflet-tile { mix-blend-mode: normal; }
+/* Color basemap at night: invert lightness, keep hues */
+.leaflet-layer.bm-night { filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.75); }
+.leaflet-layer.bm-dim { filter: brightness(.8); }
 .legend {
   position: absolute; left: 12px; bottom: 22px; z-index: 500; background: var(--card); color: var(--ink);
   border-radius: var(--radius-s); padding: 8px 10px; box-shadow: var(--shadow); font-size: 12px; display: grid; gap: 3px;
@@ -328,11 +331,11 @@ textarea.draft { width: 100%; min-height: 260px; font: 13px/1.5 "Instrument Sans
   body.m-list .rail { display: flex; }
   body.m-list .mapwrap { display: none; }
   body.m-drawer .mapwrap { display: block; }
-  .results { overflow: visible; flex: none; padding-bottom: 72px; }
-  .legend { left: 10px; bottom: 74px; }
+  .results { overflow: visible; flex: none; padding-bottom: 96px; }
+  .legend { left: 10px; bottom: 96px; }
   .drawer { position: fixed; inset: 0; width: auto; border-radius: 0; z-index: 1300; }
   .viewswitch {
-    display: block; position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 1200;
+    display: block; position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 1200;
     background: var(--ink); color: var(--paper); border: 0; border-radius: 999px; padding: 11px 20px;
     font-weight: 600; font-size: 14px; box-shadow: var(--shadow); white-space: nowrap;
   }
@@ -360,3 +363,67 @@ textarea.draft { width: 100%; min-height: 260px; font: 13px/1.5 "Instrument Sans
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
 .bv.context, .bv.ladder, .bv.same, .bv.range { border: 1px dashed var(--ink-2); color: var(--ink-2); }
 .bv.range-out { background: var(--warn-wash); color: var(--warn); }
+
+/* Bus stops */
+.bus-stop {
+  display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; flex: none;
+  background: #24476B; color: #fff; box-shadow: 0 0 0 1.5px #fff, 0 1px 3px rgba(0, 0, 0, .35);
+}
+.bus-stop svg { width: 11px; height: 11px; }
+.bus-stop.sm { width: 14px; height: 14px; box-shadow: none; }
+.bus-stop.sm svg { width: 10px; height: 10px; }
+.rts { display: inline-flex; flex-wrap: wrap; gap: 3px; }
+.leaflet-tooltip.bus-tip .rts { display: flex; margin-top: 4px; }
+.rt { display: inline-block; min-width: 18px; padding: 0 4px; border-radius: 3px; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; }
+.bus { display: grid; gap: 6px; margin: -6px 0 14px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-s); font-size: 14px; }
+.bus-row { display: grid; grid-template-columns: 16px 1fr auto; gap: 8px; align-items: center; }
+.bus-row small { color: var(--ink-2); font-size: 12px; white-space: nowrap; }
+.legend label.row { cursor: pointer; }
+.legend label.row input { margin: 0 2px 0 0; accent-color: var(--ink); }
+.legend i.lg-place { width: 14px; height: 10px; border-radius: 999px; background: var(--ink); }
+
+/* My places */
+.place-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pchip { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; background: var(--paper); font-size: 13px; }
+.pchip button { border: 0; background: none; padding: 3px 3px 3px 10px; font-weight: 600; }
+.pchip .pc-x { padding: 3px 9px 3px 5px; color: var(--ink-2); font-weight: 400; }
+.pchip.on { background: var(--badger); border-color: var(--badger); }
+.pchip.on button { color: #fff; }
+.place-hint { font-size: 13px; color: var(--ink-2); }
+.place-form { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--paper); }
+.pf-row { display: flex; gap: 8px 12px; align-items: center; flex-wrap: wrap; }
+.pf-row input { flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--card); }
+.btn.small { padding: 5px 12px; font-size: 13px; }
+.place-results { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 240px; overflow-y: auto; }
+.place-results:empty { display: none; }
+.place-results button { width: 100%; text-align: left; border: 0; background: none; padding: 6px 8px; border-radius: var(--radius-s); display: grid; }
+.place-results button:hover, .place-results button:focus-visible { background: var(--lake-wash); }
+.place-results span { font-size: 12px; color: var(--ink-2); }
+.place-msg { margin: 0; font-size: 13px; color: var(--ink-2); }
+.place-pin {
+  position: absolute; left: 0; top: 0; transform: translate(-50%, calc(-100% - 7px));
+  background: var(--ink); color: var(--paper); font-size: 12px; font-weight: 700; line-height: 1;
+  padding: 5px 9px; border-radius: 999px; white-space: nowrap; box-shadow: 0 2px 8px rgba(0, 0, 0, .3);
+}
+.place-pin::after {
+  content: ""; position: absolute; left: 50%; top: 100%; transform: translateX(-50%);
+  border: 6px solid transparent; border-top-color: var(--ink); border-bottom: 0;
+}
+.place-pin.ref { background: var(--badger); color: #fff; }
+.place-pin.ref::after { border-top-color: var(--badger); }
+.place-pin.preview { background: var(--lake); color: var(--on-accent); }
+.place-pin.preview::after { border-top-color: var(--lake); }
+.dist-tag {
+  display: inline-block; transform: translate(-50%, -50%); background: var(--card); color: var(--ink);
+  border: 1.5px solid var(--ink); font-size: 11px; font-weight: 700; padding: 0 6px; line-height: 17px;
+  border-radius: 999px; white-space: nowrap; box-shadow: 0 1px 4px rgba(0, 0, 0, .2);
+}
+.pdist { list-style: none; margin: 8px 0 0; padding: 8px 0 0; border-top: 1px solid var(--line); display: grid; gap: 3px; }
+.pdist li { display: flex; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
+.pdist span { color: var(--ink-2); }
+.res .sub .pd { color: var(--lake-ink); }
+.pick-hint { display: flex; align-items: center; gap: 10px; }
+.pick-hint button { border: 0; background: none; color: inherit; text-decoration: underline; padding: 0; font: inherit; }
+/* Picking a spot: every click goes to the map, not to icons on it */
+.leaflet-container.picking { cursor: crosshair; }
+.leaflet-container.picking .leaflet-marker-icon { pointer-events: none !important; }

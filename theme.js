@@ -1,7 +1,7 @@
-/* Appearance preference (light / dark / system, accent color), shared by the map and admin pages.
-   Load in <head> so the theme is set before first paint. Default: light theme, lake accent. */
+/* Appearance preference (light / dark / system, accent color, basemap), shared by the map and admin pages.
+   Load in <head> so the theme is set before first paint. Default: light theme, lake accent, color basemap. */
 (function () {
-  var KT = 'isthmus:theme', KA = 'isthmus:accent';
+  var KT = 'isthmus:theme', KA = 'isthmus:accent', KB = 'isthmus:basemap';
   var root = document.documentElement;
   var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   var listeners = [];
@@ -16,12 +16,14 @@
   function put(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage blocked */ } }
   function mode() { return get(KT, 'light'); }
   function accent() { return get(KA, 'lake'); }
+  function basemap() { return get(KB, 'color'); }
   function resolved() { var t = mode(); return t === 'auto' ? (mq && mq.matches ? 'dark' : 'light') : t; }
 
   function apply() {
     var t = resolved();
     root.setAttribute('data-theme', t);
     root.setAttribute('data-accent', accent());
+    root.setAttribute('data-basemap', basemap());
     root.style.colorScheme = t;
     for (var i = 0; i < listeners.length; i++) listeners[i](t, accent());
   }
@@ -39,8 +41,9 @@
     panel.addEventListener('click', function (e) { e.stopPropagation(); });  // keep open while choosing
 
     function render() {
-      var z = zh(), m = mode(), a = accent();
+      var z = zh(), m = mode(), a = accent(), bm = basemap();
       var modes = [['light', 'Light', '亮色'], ['dark', 'Dark', '暗色'], ['auto', 'System', '跟随系统']];
+      var maps = [['color', 'Color', '彩色'], ['gray', 'Gray', '灰色'], ['satellite', 'Satellite', '卫星']];
       panel.innerHTML =
         '<div class="ap-row"><span class="ap-lbl">' + (z ? '主题' : 'Theme') + '</span><div class="seg ap-seg">' +
         modes.map(function (o) {
@@ -50,7 +53,14 @@
         ACCENTS.map(function (c) {
           return '<button data-accent="' + c[0] + '" class="' + (a === c[0] ? 'on' : '') + '" style="background:' + c[1] +
             '" title="' + (z ? c[3] : c[2]) + '" aria-label="' + (z ? c[3] : c[2]) + '"></button>';
-        }).join('') + '</div></div>';
+        }).join('') + '</div></div>' +
+        (document.getElementById('map') ? '<div class="ap-row"><span class="ap-lbl">' + (z ? '地图' : 'Map') + '</span><div class="seg ap-seg">' +
+          maps.map(function (o) {
+            return '<button data-bm="' + o[0] + '" class="' + (bm === o[0] ? 'on' : '') + '">' + (z ? o[2] : o[1]) + '</button>';
+          }).join('') + '</div></div>' : '');
+      panel.querySelectorAll('[data-bm]').forEach(function (b) {
+        b.onclick = function () { put(KB, b.getAttribute('data-bm')); apply(); render(); };
+      });
       panel.querySelectorAll('[data-mode]').forEach(function (b) {
         b.onclick = function () { put(KT, b.getAttribute('data-mode')); apply(); render(); };
       });
@@ -68,7 +78,7 @@
   }
 
   window.IsthmusTheme = {
-    mode: mode, accent: accent,
+    mode: mode, accent: accent, basemap: basemap,
     isDark: function () { return resolved() === 'dark'; },
     onChange: function (f) { listeners.push(f); },
   };
