@@ -16,7 +16,7 @@
     all_landlords: '全部房东', reset: '重置', export: '下载 CSV', pick_hint: '点击地图设定你的位置，按 Esc 取消。',
     gaps_intro: '下面每个物业都缺少租房需要的信息，或不同来源之间数据冲突。选一个房东，查看要问他们什么。',
     noshared: '不算合住（两人一间的每人价）',
-    appearance: '外观',
+    appearance: '外观', ftoggle: '价格、距离等筛选',
   };
   const ZHF = {
     props: n => `<b>${n}</b> 个物业`, units: n => `<b>${n}</b> 个户型/单元`,
@@ -71,7 +71,11 @@
   };
 
   // ---------- map
-  const map = L.map('map', { zoomControl: true, preferCanvas: true }).setView(LM['Bascom Hall'], 15);
+  // Open on where the listings are (median of those within a mile), wider on phones
+  const near = P.filter(p => p.dist <= 1 && p.lat);
+  const med = a => a.slice().sort((x, y) => x - y)[a.length >> 1];
+  const home = near.length ? [med(near.map(p => p.lat)), med(near.map(p => p.lng))] : LM['Bascom Hall'];
+  const map = L.map('map', { zoomControl: true, preferCanvas: true }).setView(home, matchMedia('(max-width: 860px)').matches ? 14 : 15);
   let dark = window.IsthmusTheme ? IsthmusTheme.isDark() : false;
   const esri = n => `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/${n}/MapServer/tile/{z}/{y}/{x}`;
   const ESRI_ATTR = 'Tiles &copy; <a href="https://www.esri.com/">Esri</a>, HERE, Garmin, &copy; OpenStreetMap contributors';
@@ -93,7 +97,18 @@
   const ringLayer = L.layerGroup().addTo(map);
   const markerLayer = L.layerGroup().addTo(map);
   const tagLayer = L.layerGroup().addTo(map);
+  const selLayer = L.layerGroup().addTo(map);
   let refMarker = null;
+
+  // Ring around the open property
+  function markSel() {
+    selLayer.clearLayers();
+    const p = state.sel && P.find(x => x.id === state.sel);
+    if (!p) return;
+    const m = markers.get(p.id);
+    if (m) m.bringToFront();
+    L.circleMarker([p.lat, p.lng], { radius: 15, color: cssVar('ink'), weight: 2.5, fill: false, interactive: false }).addTo(selLayer);
+  }
 
   function drawRings() {
     ringLayer.clearLayers();
@@ -237,13 +252,43 @@
     $('dist-lbl').innerHTML = F().dist_lbl(state.dist.toFixed(2).replace(/0$/, ''));
     renderList();
     renderMarkers();
+    const nMore = Object.values(state.checks).filter(Boolean).length + (state.landlord ? 1 : 0);
+    $('more-n').textContent = nMore ? ` (${nMore})` : '';
+    const nAll = nMore + (noCap ? 0 : 1) + (state.dist < 2 ? 1 : 0) + (state.term ? 1 : 0) + (state.noShared ? 0 : 1);
+    $('ftoggle-n').textContent = nAll ? ` (${nAll})` : '';
+    setViewSwitch();
   }
 
+  // ---------- phone layout: map or list, one at a time
+  const phone = matchMedia('(max-width: 860px)');
+  function setViewSwitch() {
+    const zh = lang === 'zh';
+    const listMode = document.body.classList.contains('m-list');
+    $('viewswitch').textContent = listMode ? (zh ? '看地图' : 'Show map') : (zh ? `看列表 · ${current.length}` : `Show list · ${current.length}`);
+  }
+  // Phone: price, distance and the rest fold under one button
+  $('ftoggle').onclick = () => {
+    const open = document.querySelector('.filters').classList.toggle('open');
+    $('ftoggle').setAttribute('aria-expanded', open);
+  };
+  $('viewswitch').onclick = () => {
+    document.body.classList.toggle('m-list');
+    setViewSwitch();
+    if (!document.body.classList.contains('m-list')) setTimeout(() => map.invalidateSize(), 0);
+    window.scrollTo(0, 0);
+  };
+
   function priceHTML(p) {
-    if (p._minBed != null) return `<div class="price">${p._minBedDiv ? '≈' : ''}${money(p._minBed)}${p._minBedUnv ? '?' : ''}<small>${F().from} ${F().per_person}${p._minBedDiv ? (lang === 'zh' ? '（整套÷卧室）' : ' (unit ÷ beds)') : ''}${p._minBedUnv ? (lang === 'zh' ? '，未核实是否整套价' : ', not confirmed as whole-unit price') : ''}</small></div>`;
-    if (p._minRent != null) return `<div class="price">${money(p._minRent)}<small>${F().per_unit}</small></div>`;
+    const zh = lang === 'zh';
+    if (p._minBed != null) {
+      const tip = (p._minBedDiv ? (zh ? '整套租金 ÷ 卧室数' : 'Whole-unit rent ÷ bedrooms') : (zh ? '每人价格' : 'Per-person price'))
+        + (p._minBedUnv ? (zh ? '；未核实是否整套价' : '; not confirmed as a whole-unit price') : '');
+      return `<div class="price" title="${esc(tip)}">${p._minBedDiv ? '≈' : ''}${money(p._minBed)}${p._minBedUnv ? '?' : ''}<small>${zh ? '每人起' : 'per person, from'}</small></div>`;
+    }
+    if (p._minRent != null) return `<div class="price">${money(p._minRent)}<small>${zh ? '每月起' : 'per month, from'}</small></div>`;
     return `<div class="price none">${F().no_price}</div>`;
   }
+  const distLabel = mi => lang === 'zh' ? `${mi.toFixed(2)} 英里 · 步行 ${walkMin(mi)} 分钟` : `${mi.toFixed(2)} mi · ${walkMin(mi)} min walk`;
 
   function bedsSummary(ls) {
     const s = [...new Set(ls.map(x => x.beds).filter(b => b != null))].sort((a, b) => a - b);
@@ -260,7 +305,8 @@
     }
     const html = current.slice(0, 400).map(p => {
       const title = p.name || p.address || '—';
-      const sub = [p.name ? p.address : null, p.landlord, `${p._d.toFixed(2)} mi · ${walkMin(p._d)} min`].filter(Boolean).map(esc).join(' — ');
+      const sub = (p.name && p.address ? `<span>${esc(p.address)}</span>` : '')
+        + `<span>${p.landlord ? esc(p.landlord) + ' · ' : ''}<span class="nw">${distLabel(p._d)}</span></span>`;
       const has2728 = p._ls.some(x => x.term === '2027-28');
       const gapsN = (p.gaps || []).filter(g => !/not listed|rent basis/.test(g)).length;
       return `<li class="res${state.sel === p.id ? ' sel' : ''}" data-id="${esc(p.id)}" tabindex="0">
@@ -289,6 +335,7 @@
       markers.set(p.id, m);
     });
     renderTags();
+    markSel();
   }
 
   function renderTags() {
@@ -322,7 +369,8 @@
     if (v === true) v = lang === 'zh' ? '是' : 'Yes';
     else if (v === false) v = lang === 'zh' ? '否' : 'No';
     else if (v === 'not listed') v = lang === 'zh' ? '未列出（需确认）' : 'Not mentioned (ask)';
-    else if (Array.isArray(v)) v = v.join(', ');
+    else if (Array.isArray(v)) v = lang === 'zh' ? v.map(t => UTIL_ZH[t] || t).join('、') : v.join(', ');
+    else if (lang === 'zh' && ZH_RULES[k]) v = zhText(v, ZH_RULES[k]);
     return esc(v) + provTag(p, k);
   }
 
@@ -341,9 +389,88 @@
       : ` <span class="bv ${bv[0]}" title="${esc(tip)}">${inner}</span>`;
   }
 
+  const STATUS_ZH = {
+    available: '可租', listed: '在租', rented: '已租', limited: '余量有限', 'limited availability': '余量有限',
+    call: '需致电询价', 'pricing not published': '价格未公布', unknown: '未知', pending: '待定', 'available now': '现可租',
+  };
+  function statusLabel(s) {
+    if (!s) return '';
+    if (lang !== 'zh') return s;
+    const k = s.toLowerCase();
+    return STATUS_ZH[k] || (/^showings begin/.test(k) ? s.replace(/showings begin/i, '看房开始于') : /rented/.test(k) ? '已租' : s);
+  }
+  function dateLabel(a) {
+    if (!a) return '—';
+    if (a === 'now') return lang === 'zh' ? '现在' : 'Now';
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(a);
+    if (!m) return a;
+    return lang === 'zh' ? `${+m[1]}/${+m[2]}/${+m[3]}` : `${+m[2]}/${+m[3]}/${m[1]}`;
+  }
+
+  const TERM_ZH = { 'past date': '日期已过', later: '更晚', 'now / 2026-27': '现在 / 2026–27', '2025-26 (old)': '2025–26（旧）' };
   function termLabel(t) {
-    if (!t) return lang === 'zh' ? '未说明' : 'not stated';
-    return t;
+    if (!t) return lang === 'zh' ? '租期未说明' : 'term not stated';
+    return lang === 'zh' ? TERM_ZH[t] || t : t;
+  }
+  // Term adds nothing when the move-in date already shows the same year
+  const termRedundant = x => x.term && x.avail && (x.avail === 'now' ? x.term.startsWith('now') : x.term.startsWith(x.avail.slice(0, 4)));
+  function moveIn(a) {
+    if (!a) return '—';
+    if (a === 'now') return lang === 'zh' ? '现在可入住' : 'Move-in now';
+    return lang === 'zh' ? `${dateLabel(a)} 入住` : `Move-in ${dateLabel(a)}`;
+  }
+
+  // ---------- Chinese display of English source values (kept in English unless fully translated)
+  const UTIL_ZH = { water: '水', heat: '暖气', sewer: '下水道', trash: '垃圾清运', 'hot water': '热水', electric: '电', gas: '燃气', internet: '网络', cable: '有线电视' };
+  const ZH_RULES = {
+    pets: [
+      [/cats? not allowed/gi, '不许养猫'], [/(small )?dogs? not allowed/gi, '不许养狗'], [/no pets( allowed)?/gi, '不许养宠物'],
+      [/pets negotiable/gi, '宠物可商量'], [/pets allowed/gi, '可养宠物'], [/small dogs? & cats?/gi, '可养猫和小型犬'],
+      [/dogs? & cats?/gi, '可养猫和狗'], [/small dogs?( allowed)?/gi, '可养小型犬'], [/cats?( allowed| friendly)?/gi, '可养猫'],
+      [/dogs?( allowed| friendly)?/gi, '可养狗'], [/\s*[;,]\s*/g, '；'], [/\.$/, ''],
+    ],
+    laundry: [
+      [/\(washer: (\$[\d.]+), dryer: (\$[\d.]+)\)/gi, '（洗 $1，烘 $2）'], [/laundry on-?site|on[ -]site/gi, '楼内洗衣房'],
+      [/in[ -]unit/gi, '室内洗衣机'], [/washer & dryer/gi, '室内洗衣机和烘干机'], [/laundry included/gi, '含洗衣'],
+      [/laundromat/gi, '附近洗衣店'], [/nearby/gi, '附近洗衣房'], [/each floor/gi, '每层洗衣房'], [/hookups/gi, '洗衣机接口'],
+      [/\s*,\s*/g, '；'], [/\s+（/g, '（'],
+    ],
+    parking: [
+      [/local ordinances apply/gi, '遵守当地规定'], [/subject to availability/gi, '视空位而定'], [/call for availability/gi, '需致电询问'],
+      [/\(included\)/gi, '（含在房租里）'], [/\(available\)/gi, '（有空位）'], [/\(rented\)/gi, '（已租完）'],
+      [/\(monthly: (\$\d+)\)/gi, '（每月 $1）'], [/\(monthly\)/gi, '（按月付）'], [/parking (\$\d+)\/mo/gi, '停车位 $1/月'],
+      [/paid parking/gi, '付费停车'], [/off-street parking/gi, '路外停车位'], [/driveway parking/gi, '车道停车'],
+      [/surface lot/gi, '地面停车场'], [/underground and surface parking available/gi, '有地下和地面停车位'],
+      [/surface parking available/gi, '有地面停车位'], [/parking included/gi, '含停车位'], [/parking is extra\.?/gi, '停车另收费'],
+      [/^street\b/gi, '路边停车'], [/^available$/gi, '有'], [/\s*;\s*/g, '；'], [/\s*\(\s*/g, '（'], [/\s*\)/g, '）'],
+    ],
+  };
+  function zhText(s, rules) {
+    let t = String(s);
+    for (const [re, r] of rules) t = t.replace(re, r);
+    return /[A-Za-z]{2,}/.test(t) ? s : t;
+  }
+  const ZH_GAP = {
+    'furnished? (not listed)': '是否带家具（未列出）', 'air conditioning (not listed)': '空调（未列出）', 'pet policy': '宠物政策',
+    '2027-28 availability/pricing': '2027–28 房源与价格', parking: '停车', 'square footage': '面积', 'utilities included': '包含哪些水电',
+    laundry: '洗衣', 'furnished?': '是否带家具', 'available date': '入住日期', 'air conditioning': '空调',
+    'rent basis (per person or whole unit)': '计价方式（每人还是整套）', 'contact info': '联系方式', rent: '租金',
+  };
+  const ZH_NOTE = [
+    [/^UW listing: price update date unknown$/i, () => 'UW 列表：价格更新日期未知'],
+    [/^UW listing price last updated (\S+)$/i, (_, d) => `UW 列表价格最后更新于 ${dateLabel(d)}`],
+    [/^available date (\S+) already passed$/i, (_, d) => `入住日期 ${dateLabel(d)} 已过`],
+    [/^site says call for pricing\/availability$/i, () => '官网写着价格和空房需致电询问'],
+    [/^lease year not stated on listing$/i, () => '房源没写租约年份'],
+    [/^Shared = two people per bedroom, price per person$/i, () => '合住：两人一间，价格为每人'],
+    [/^per-bed space (\$[\d,]+); entire unit (\$[\d,]+)$/i, (_, a, b) => `每床位 ${a}；整套 ${b}`],
+    [/^floor plan page blocked by Cloudflare during scrape$/i, () => '抓取时户型页被 Cloudflare 拦截'],
+  ];
+  function zhNote(s) {
+    if (lang !== 'zh') return s;
+    if (ZH_GAP[s]) return ZH_GAP[s];
+    const hit = ZH_NOTE.find(([re]) => re.test(s));
+    return hit ? s.replace(hit[0], hit[1]) : s;
   }
 
   const opened = new Set();
@@ -356,8 +483,13 @@
     const zh = lang === 'zh';
     const ls = p._ls && current.includes(p) ? p._ls : p.listings.filter(x => !(state.noShared && x.shared));
     const hiddenShared = state.noShared ? p.listings.filter(x => x.shared).length : 0;
-    const units = ls.map(x => {
-      const what = [x.unit, x.plan].filter(Boolean).join(' · ') || '—';
+    // Marketing headlines repeated on most units ("In the Center of It All") add nothing per row
+    const planN = {};
+    ls.forEach(x => { if (x.plan) planN[x.plan] = (planN[x.plan] || 0) + 1; });
+    const noisyPlan = pl => pl && ls.length >= 4 && planN[pl] >= Math.max(3, ls.length * 0.3) && !/bed|bath|studio|卧|plan|floor/i.test(pl);
+    const unitRow = x => {
+      const plan = noisyPlan(x.plan) && x.unit ? null : x.plan;
+      const what = [x.unit, plan].filter(Boolean).join(' · ') || '—';
       const bb = `${x.beds == null ? '?' : x.beds === 0 ? (zh ? '单间' : 'Studio') : x.beds + (zh ? '卧' : 'bd')}${x.baths != null ? ' / ' + x.baths + (zh ? '卫' : 'ba') : ''}`;
       const unv = x.bv && ['none', 'range-out'].includes(x.bv[0]);
       const basisLbl = x.shared ? (zh ? '合住每人价（两人一间）' : 'per person, shared room')
@@ -366,12 +498,36 @@
       const per = x.per_bed && (x.pb_div || (x.shared && x.per_bed !== x.rent)) ? `<div class="muted${unv ? ' unv' : ''}">≈ ${money(x.per_bed)}${zh ? '/人' : '/person'}${x.pb_div ? ` (÷${x.beds})` : ''}${unv ? (zh ? ' 未核实' : ' unconfirmed') : ''}</div>` : '';
       const flags = [...(x.flags || []), ...((x.notes || []).filter(n => !/banner/i.test(n) && /call for|blocked|not stated|per room|per-bed|Shared|lease year/i.test(n)))];
       return `<tr class="${x.flags ? 'flagged' : ''}${x.shared ? ' shared' : ''}">
-        <td>${esc(what)}<div class="muted">${esc(PROV[x.src === 'uw_offcampus' ? 'uw' : 'official'][zh ? 1 : 0])}${x.status ? ' · ' + esc(x.status) : ''}</div>${flags.length ? `<div class="muted">${flags.map(esc).join('<br>')}</div>` : ''}</td>
-        <td>${bb}${x.sqft ? `<div class="muted">${x.sqft.toLocaleString()} ft²</div>` : ''}</td>
-        <td class="r">${rent}${per}</td>
-        <td>${esc(x.avail === 'now' ? (zh ? '现在' : 'Now') : (x.avail || '—'))}<div class="muted">${esc(termLabel(x.term))}</div></td>
+        <td class="u-what">${esc(what)}<div class="muted src">${esc(PROV[x.src === 'uw_offcampus' ? 'uw' : 'official'][zh ? 1 : 0])}${x.status ? ' · ' + esc(statusLabel(x.status)) : ''}</div>${flags.length ? `<div class="muted fl">${flags.map(f => esc(zhNote(f))).join('<br>')}</div>` : ''}</td>
+        <td class="u-size">${bb}${x.sqft ? `<div class="muted">${x.sqft.toLocaleString()} ft²</div>` : ''}</td>
+        <td class="r u-rent">${rent}${per}</td>
+        <td class="u-when">${esc(moveIn(x.avail))}${termRedundant(x) ? '' : `<div class="muted">${esc(termLabel(x.term))}</div>`}</td>
       </tr>`;
+    };
+    // Group by bedroom count (shared rooms separately)
+    const groups = new Map();
+    ls.slice().sort((a, b) => (a.beds ?? 99) - (b.beds ?? 99) || (a.shared ? 1 : 0) - (b.shared ? 1 : 0) || (a.rent || 1e9) - (b.rent || 1e9))
+      .forEach(x => { const k = `${x.shared ? 'S' : ''}${x.beds ?? '?'}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); });
+    const range = (vals, f = money) => { const v = vals.filter(n => n != null); if (!v.length) return ''; const lo = Math.min(...v), hi = Math.max(...v); return lo === hi ? f(lo) : `${f(lo)}–${f(hi)}`; };
+    const openAll = ls.length <= 8;
+    const units = [...groups.entries()].map(([k, xs], gi) => {
+      const b = xs[0].beds;
+      const label = (xs[0].shared ? (zh ? '合住 · ' : 'Shared · ') : '') + (b == null ? '?' : b === 0 ? (zh ? '单间' : 'Studio') : zh ? `${b} 卧` : `${b} bedroom${b > 1 ? 's' : ''}`);
+      const pp = range(xs.map(x => x.per_bed));
+      const sq = range(xs.map(x => x.sqft), v => v.toLocaleString());
+      const summary = [
+        zh ? `${xs.length} 个` : `${xs.length} listed`,
+        pp ? (zh ? `每人 ${pp}` : `${pp} per person`) : (zh ? '价格未公开' : 'no price posted'),
+        sq ? `${sq} ft²` : '',
+      ].filter(Boolean).join(' · ');
+      return `<details class="ugroup"${openAll || gi === 0 ? ' open' : ''}><summary><b>${label}</b><span>${esc(summary)}</span></summary>
+        <table class="units"><tbody>${xs.map(unitRow).join('')}</tbody></table></details>`;
     }).join('');
+    const ppAll = range(ls.map(x => x.per_bed));
+    const bedsAll = bedsSummary(ls);
+    const terms = [...new Set(ls.map(x => x.term).filter(Boolean))].filter(t => t !== 'past date').slice(0, 2);
+    const overview = [ppAll ? (zh ? `每人 ${ppAll}` : `${ppAll} per person`) : '', bedsAll, zh ? `${ls.length} 个户型` : `${ls.length} listed`, ...terms.map(termLabel)]
+      .filter(Boolean).map(s => `<span>${esc(s)}</span>`).join('');
     const facts = [
       ['utilities', zh ? '含的水电' : 'Included', p.utilities],
       ['tenant_pays', zh ? '租客自付' : 'Tenant pays', p.tenant_pays],
@@ -386,9 +542,9 @@
     const fees = p.fees ? `<dt>${zh ? '费用' : 'Fees'}</dt><dd>${p.fees.map(esc).join('<br>')}${provTag(p, 'fees')}</dd>` : '';
     const issues = [];
     const gapList = (p.gaps || []);
-    if (gapList.length) issues.push(`<p><b>${zh ? '缺失' : 'Missing'}:</b> ${gapList.map(esc).join(', ')}</p>`);
+    if (gapList.length) issues.push(`<p><b>${zh ? '缺失：' : 'Missing:'}</b> ${gapList.map(g => esc(zhNote(g))).join(zh ? '、' : ', ')}</p>`);
     const unclear = [...(p.conflicts || []), ...(p.stale || [])];
-    if (unclear.length) issues.push(`<p><b>${zh ? '不清楚 / 可能过期' : 'Unclear or possibly outdated'}:</b></p><ul>${unclear.map(u => `<li>${esc(u)}</li>`).join('')}</ul>`);
+    if (unclear.length) issues.push(`<p><b>${zh ? '不清楚 / 可能过期：' : 'Unclear or possibly outdated:'}</b></p><ul>${unclear.map(u => `<li>${esc(zhNote(u))}</li>`).join('')}</ul>`);
     const banners = [...new Set(p.listings.flatMap(x => (x.notes || []).filter(n => /^Site banner:/.test(n))))];
     if (banners.length) issues.push(`<p><b>${zh ? '官网公告' : 'Landlord site says'}:</b> ${banners.map(b => esc(b.replace(/^Site banner:\s*/, ''))).join(' / ')}</p>`);
     if (p.uw_dupes_hidden) issues.push(`<p>${zh ? `另有 ${p.uw_dupes_hidden} 条 UW 列表重复数据已隐藏（以官网为准）。` : `${p.uw_dupes_hidden} duplicate rows from the UW list are hidden in favor of the landlord site.`}</p>`);
@@ -401,35 +557,40 @@
       p.contact_hidden && uwLink ? `<a href="${esc(uwLink[1])}" target="_blank" rel="noopener">${zh ? '通过 UW 租房列表联系房东' : 'Contact through the UW listing'}</a>` : '',
     ].filter(Boolean).join('');
     const dr = $('drawer');
-    dr.innerHTML = `<button class="close" aria-label="Close">×</button>
-      <h2>${esc(p.name || p.address)}</h2>
+    dr.innerHTML = `<div class="dhead"><h2>${esc(p.name || p.address)}</h2><button class="close" aria-label="Close">×</button></div>
       <p class="addr">${esc(p.name ? p.address || '' : '')}${p.name && p.address ? ', ' : ''}${esc(p.city)} ${esc(p.zip || '')} — ${esc(p.landlord || (zh ? '房东未知' : 'Landlord unknown'))}</p>
+      ${overview ? `<div class="overview">${overview}</div>` : ''}
       <div class="contact">${contact || `<span class="nostate">${zh ? '没找到联系方式' : 'No contact found'}</span>`}</div>
       <div class="walk">${F().walk(walkMin(d), d.toFixed(2), esc(state.ref))}${p.geo && p.geo.startsWith('nominatim') ? `<br><small>${zh ? '位置为近似值（按地址检索）' : 'Approximate location (geocoded)'}</small>` : ''}</div>
       ${photos ? `<div class="photos">${photos}</div>` : ''}
       ${issues.length ? `<div class="issues">${issues.join('')}</div>` : ''}
-      <h4>${zh ? '户型与价格' : 'Units and prices'} (${ls.length})</h4>
-      <table class="units"><thead><tr><th>${zh ? '单元/户型' : 'Unit / plan'}</th><th>${zh ? '房型' : 'Size'}</th><th class="r">${zh ? '月租' : 'Rent'}</th><th>${zh ? '入住' : 'Move-in'}</th></tr></thead><tbody>${units}</tbody></table>
+      <h4>${zh ? '户型与价格' : 'Units and prices'}</h4>
+      ${units}
       ${hiddenShared ? `<p class="hidden-note">${zh ? `另有 ${hiddenShared} 个合住价格（两人一间）未显示，关掉左侧"不算合住"可查看。` : `${hiddenShared} shared-room prices (two people per bedroom) are hidden; turn off "Leave out shared rooms" to see them.`}</p>` : ''}
       <h4>${zh ? '条件' : 'Terms'}</h4>
       <dl class="facts">${facts}${utilTxt}${fees}</dl>
-      ${p.amenities ? `<h4>${zh ? '设施' : 'Amenities'}</h4><p class="desc">${p.amenities.map(esc).join(', ')}</p>` : ''}
+      ${p.amenities ? `<h4>${zh ? '设施（原文）' : 'Amenities'}</h4><p class="desc">${p.amenities.filter(a => !/^[\d.,$\s]+$/.test(a)).map(esc).join(', ')}</p>` : ''}
       ${p.description ? `<h4>${zh ? '描述（原文）' : 'Description'}</h4><p class="desc">${esc(p.description.slice(0, 1500))}</p>` : ''}
       <h4>${zh ? '数据来源' : 'Where this came from'}</h4>
       <ol class="srcs">${(p.links || []).map(([l, u]) => `<li><a href="${esc(u)}" target="_blank" rel="noopener">${esc(l)}</a></li>`).join('')}</ol>`;
     dr.hidden = false;
+    document.body.classList.add('m-drawer');
     dr.scrollTop = 0;
     dr.querySelector('.close').onclick = closeDrawer;
     document.querySelectorAll('.res.sel').forEach(e => e.classList.remove('sel'));
     const li = document.querySelector(`.res[data-id="${CSS.escape(id)}"]`);
     if (li) { li.classList.add('sel'); if (!pan) li.scrollIntoView({ block: 'nearest' }); }
     markers.forEach((m, k) => m.setRadius(k === id ? 9 : 6));
+    markSel();
     if (pan) map.panTo([p.lat, p.lng]);
   }
   function closeDrawer() {
     $('drawer').hidden = true;
+    document.body.classList.remove('m-drawer');
+    if (phone.matches && !document.body.classList.contains('m-list')) setTimeout(() => map.invalidateSize(), 0);
     state.sel = null;
     markers.forEach(m => m.setRadius(6));
+    markSel();
     document.querySelectorAll('.res.sel').forEach(e => e.classList.remove('sel'));
   }
 
@@ -513,10 +674,13 @@
   // ---------- legend + header stats
   function renderLegend() {
     const zh = lang === 'zh';
-    $('legend').innerHTML = `<b>${state.noShared ? (zh ? '每人最低月租（一人一间）' : 'Lowest rent, own bedroom') : (zh ? '每人最低月租（含合住）' : 'Lowest rent per person, incl. shared')}</b>` +
+    const lgOpen = safeGet('legend') ? safeGet('legend') === '1' : !matchMedia('(max-width: 860px)').matches;
+    $('legend').classList.toggle('closed', !lgOpen);
+    $('legend').innerHTML = `<button class="lg-head" type="button" aria-expanded="${lgOpen}">${state.noShared ? (zh ? '每人最低月租（一人一间）' : 'Lowest rent, own bedroom') : (zh ? '每人最低月租（含合住）' : 'Lowest rent per person, incl. shared')}</button><div class="lg-body">` +
       [['p1', '< $900'], ['p2', '$900–1,199'], ['p3', '$1,200–1,499'], ['p4', '$1,500–1,899'], ['p5', '$1,900+']].map(([c, t]) => `<span class="row"><i style="background:var(--${c})"></i>${t}</span>`).join('') +
       `<span class="row"><i style="border:2px solid var(--p0)"></i>${zh ? '未公开价格' : 'No price posted'}</span>` +
-      `<span class="row"><i style="background:var(--badger);border-radius:0;transform:rotate(45deg)"></i>${zh ? '参考点（圈 = 0.5 英里）' : 'Reference point, rings every 0.5 mi'}</span>`;
+      `<span class="row"><i style="background:var(--badger);border-radius:0;transform:rotate(45deg)"></i>${zh ? '参考点（圈 = 0.5 英里）' : 'Reference point, rings every 0.5 mi'}</span></div>`;
+    $('legend').querySelector('.lg-head').onclick = () => { safeSet('legend', $('legend').classList.contains('closed') ? '1' : '0'); renderLegend(); };
     $('stat-props').innerHTML = F().props(META.properties);
     $('stat-units').innerHTML = F().units(META.listings);
   }
@@ -590,7 +754,7 @@
       <textarea class="draft" id="draft" aria-label="Email draft">${esc(draftEmail(ll, ps))}</textarea>
       <h4>${zh ? '物业' : 'Properties'} (${ps.length})</h4>
       <table class="gtable"><thead><tr><th>${zh ? '物业' : 'Property'}</th><th>${zh ? '缺失' : 'Missing'}</th><th>${zh ? '不清楚 / 可能过期' : 'Unclear or outdated'}</th></tr></thead><tbody>
-      ${ps.map(p => `<tr><td><a data-go="${esc(p.id)}">${esc(p.name ? p.name + ' — ' : '')}${esc(p.address || '')}</a></td><td>${esc((p.gaps || []).join(', ') || '—')}</td><td>${esc([...(p.conflicts || []), ...(p.stale || [])].join('; ') || '—')}</td></tr>`).join('')}
+      ${ps.map(p => `<tr><td><a data-go="${esc(p.id)}">${esc(p.name ? p.name + ' — ' : '')}${esc(p.address || '')}</a></td><td>${esc((p.gaps || []).map(zhNote).join(zh ? '、' : ', ') || '—')}</td><td>${esc([...(p.conflicts || []), ...(p.stale || [])].map(zhNote).join(zh ? '；' : '; ') || '—')}</td></tr>`).join('')}
       </tbody></table>`;
     $('copy-draft').onclick = async () => {
       track('draft', { ll });
@@ -649,7 +813,7 @@
   if (location.protocol.startsWith('http')) {
     fetch('/api/status').then(r => {
       if (!r.ok) return;
-      const a = Object.assign(document.createElement('a'), { href: '/admin/', className: 'lang', textContent: lang === 'zh' ? '后台' : 'Admin' });
+      const a = Object.assign(document.createElement('a'), { href: '/admin/', className: 'lang', id: 'admin-link', textContent: lang === 'zh' ? '后台' : 'Admin' });
       a.style.textDecoration = 'none';
       document.querySelector('.top-right').prepend(a);
     }).catch(() => { });

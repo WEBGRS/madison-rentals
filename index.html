@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Isthmus Rentals</title>
 <meta name="description" content="Map of rentals near the UW–Madison campus, merged from landlord websites and the UW off-campus listing service, with every missing or unclear field marked.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232E6F8E'/%3E%3Ctext x='16' y='24' font-family='Georgia,serif' font-style='italic' font-size='22' fill='white' text-anchor='middle'%3EI%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
@@ -23,7 +24,7 @@
   <div class="top-right">
     <span class="stat" id="stat-props"></span>
     <span class="stat" id="stat-units"></span>
-    <button class="lang" id="appearance" data-i18n="appearance">Appearance</button>
+    <button class="lang ap-btn" id="appearance" aria-label="Appearance"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor"/></svg><span data-i18n="appearance">Appearance</span></button>
     <button class="lang" id="lang" aria-label="Switch language">中文</button>
   </div>
 </header>
@@ -38,6 +39,8 @@
           <button data-b="0" data-i18n="studio">Studio</button><button data-b="1">1</button><button data-b="2">2</button><button data-b="3">3</button><button data-b="4">4</button><button data-b="5">5+</button>
         </div>
       </div>
+      <button class="ftoggle" id="ftoggle" type="button" aria-expanded="false" aria-controls="fbody"><span><span data-i18n="ftoggle">Price, distance and more</span><span id="ftoggle-n" class="more-n"></span></span></button>
+      <div class="fbody" id="fbody">
       <div class="field">
         <div class="lbl-row">
           <span class="lbl" id="price-lbl"></span>
@@ -72,7 +75,7 @@
           </select></label>
       </div>
       <details class="more">
-        <summary data-i18n="more">More filters</summary>
+        <summary><span data-i18n="more">More filters</span><span id="more-n" class="more-n"></span></summary>
         <div class="checks">
           <label><input type="checkbox" id="f-priced"> <span data-i18n="f_priced">Has a posted price</span></label>
           <label><input type="checkbox" id="f-heat"> <span data-i18n="f_heat">Heat included</span></label>
@@ -87,6 +90,7 @@
         </div>
         <label class="ll"><span class="lbl" data-i18n="landlord">Landlord</span><select id="landlord"><option value="" data-i18n="all_landlords">All landlords</option></select></label>
       </details>
+      </div>
       <div class="result-bar">
         <span id="count"></span>
         <span class="bar-actions">
@@ -120,6 +124,7 @@
   <div class="sources" id="sources"></div>
 </main>
 
+<button id="viewswitch" class="viewswitch" type="button"></button>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="data/properties.js"></script>
 <script src="app.js"></script>
