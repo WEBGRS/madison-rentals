@@ -154,7 +154,7 @@
       p._ls = ls;
       p._minBed = pb.length ? Math.min(...pb) : null;
       p._minBedDiv = p._minBed != null && ls.every(x => x.per_bed !== p._minBed || x.pb_div);
-      p._minBedUnv = p._minBed != null && ls.some(x => x.per_bed === p._minBed && x.bv && x.bv[0] === 'none');
+      p._minBedUnv = p._minBed != null && ls.some(x => x.per_bed === p._minBed && x.bv && ['none', 'range-out'].includes(x.bv[0]));
       p._minRent = rents.length ? Math.min(...rents) : null;
       out.push(p);
     }
@@ -250,7 +250,7 @@
         <span class="dot ${bucket(p._minBed)}" style="${p._minBed != null ? `background:var(--${bucket(p._minBed)})` : ''}"></span>
         <h3>${esc(title)}</h3>${priceHTML(p)}
         <div class="sub">${sub}</div>
-        <div class="tags">${bedsSummary(p._ls) ? `<span class="tag">${esc(bedsSummary(p._ls))}</span>` : ''}${has2728 ? '<span class="tag t2728">2027–28</span>' : ''}${(p.stale || []).some(s => /last updated|already passed|update date unknown|site not updated/i.test(s)) ? `<span class="tag gap">${lang === 'zh' ? '可能过期' : 'May be outdated'}</span>` : ''}${p._ls.some(x => x.bv && x.bv[0] === 'none') ? `<span class="tag gap">${lang === 'zh' ? '计价未核实' : 'Price basis unconfirmed'}</span>` : ''}${gapsN ? `<span class="tag gap">${F().gaps(gapsN)}</span>` : ''}</div>
+        <div class="tags">${bedsSummary(p._ls) ? `<span class="tag">${esc(bedsSummary(p._ls))}</span>` : ''}${has2728 ? '<span class="tag t2728">2027–28</span>' : ''}${(p.stale || []).some(s => /last updated|already passed|update date unknown|site not updated/i.test(s)) ? `<span class="tag gap">${lang === 'zh' ? '可能过期' : 'May be outdated'}</span>` : ''}${p._ls.some(x => x.bv && ['none', 'range-out'].includes(x.bv[0])) ? `<span class="tag gap">${lang === 'zh' ? '计价未核实' : 'Price basis unconfirmed'}</span>` : ''}${gapsN ? `<span class="tag gap">${F().gaps(gapsN)}</span>` : ''}</div>
       </li>`;
     }).join('');
     ol.innerHTML = html + (current.length > 400 ? `<li class="empty">${lang === 'zh' ? '只显示前 400 个，用筛选缩小范围。' : 'Showing the first 400. Filter to narrow down.'}</li>` : '');
@@ -312,6 +312,8 @@
   const BV = {
     text: ['listing says', '原文写明'], policy: ['landlord policy', '房东说明'], uw: ['UW label', 'UW 标注'],
     price: ['by price', '按价格判断'], rule: ['inferred', '推断'], manual: ['checked', '人工核实'], none: ['unconfirmed', '未核实'],
+    context: ['plan note', '户型说明'], ladder: ['building prices', '同楼价格阶梯'], same: ['same as sibling', '同楼同价'],
+    range: ['$800–1,500 rule', '按 800–1500 区间'], 'range-out': ['unclear', '不清楚'],
   };
   function bvTag(bv) {
     if (!bv) return '';
@@ -339,7 +341,7 @@
     const units = ls.map(x => {
       const what = [x.unit, x.plan].filter(Boolean).join(' · ') || '—';
       const bb = `${x.beds == null ? '?' : x.beds === 0 ? (zh ? '单间' : 'Studio') : x.beds + (zh ? '卧' : 'bd')}${x.baths != null ? ' / ' + x.baths + (zh ? '卫' : 'ba') : ''}`;
-      const unv = x.bv && x.bv[0] === 'none';
+      const unv = x.bv && ['none', 'range-out'].includes(x.bv[0]);
       const basisLbl = x.basis === 'bed' ? (zh ? '每人价' : 'per person') : (x.beds > 1 ? (unv ? (zh ? '整套价？' : 'whole unit?') : (zh ? '整套价' : 'whole unit')) : '');
       const rent = x.rent ? money(x.rent) + (x.rent_max && x.rent_max !== x.rent ? '–' + money(x.rent_max) : '') + (basisLbl ? `<div class="basis ${x.basis}">${basisLbl}${bvTag(x.bv)}</div>` : '') : `<span class="nostate">${zh ? '未公开' : 'not posted'}</span>`;
       const per = x.per_bed && x.pb_div ? `<div class="muted${unv ? ' unv' : ''}">≈ ${money(x.per_bed)}${zh ? '/人' : '/person'} (÷${x.beds})${unv ? (zh ? ' 未核实' : ' unconfirmed') : ''}</div>` : '';

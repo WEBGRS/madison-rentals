@@ -249,3 +249,5 @@ textarea.draft { width: 100%; min-height: 260px; font: 13px/1.5 "Instrument Sans
   .checks { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+.bv.context, .bv.ladder, .bv.same, .bv.range { border: 1px dashed var(--ink-2); color: var(--ink-2); }
+.bv.range-out { background: var(--warn-wash); color: var(--warn); }
