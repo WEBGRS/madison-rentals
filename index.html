@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Isthmus Rentals</title>
+<meta name="description" content="Map of rentals near the UW–Madison campus, merged from landlord websites and the UW off-campus listing service, with every missing or unclear field marked.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="wordmark">Isthmus</span><span class="tagline" data-i18n="tagline">Rentals near UW–Madison</span></div>
+  <nav class="tabs" role="tablist">
+    <button role="tab" class="tab active" data-view="map" data-i18n="tab_map">Map</button>
+    <button role="tab" class="tab" data-view="gaps" data-i18n="tab_gaps">Missing info</button>
+    <button role="tab" class="tab" data-view="sources" data-i18n="tab_sources">Sources</button>
+  </nav>
+  <div class="top-right">
+    <span class="stat" id="stat-props"></span>
+    <span class="stat" id="stat-units"></span>
+    <button class="lang" id="lang" aria-label="Switch language">中文</button>
+  </div>
+</header>
+
+<main id="view-map" class="view active">
+  <aside class="rail" id="rail">
+    <div class="filters">
+      <input id="q" type="search" autocomplete="off" data-i18n-ph="search_ph" placeholder="Street, building or landlord">
+      <div class="field">
+        <span class="lbl" data-i18n="bedrooms">Bedrooms</span>
+        <div class="chips" id="beds">
+          <button data-b="0" data-i18n="studio">Studio</button><button data-b="1">1</button><button data-b="2">2</button><button data-b="3">3</button><button data-b="4">4</button><button data-b="5">5+</button>
+        </div>
+      </div>
+      <div class="field">
+        <div class="lbl-row">
+          <span class="lbl" id="price-lbl"></span>
+          <div class="seg" id="basis">
+            <button data-basis="bed" class="on" data-i18n="per_person">Per person</button><button data-basis="unit" data-i18n="whole_unit">Whole unit</button>
+          </div>
+        </div>
+        <input type="range" id="price" min="500" max="3000" step="50" value="3000">
+      </div>
+      <div class="field">
+        <div class="lbl-row">
+          <span class="lbl" id="dist-lbl"></span>
+          <select id="ref" aria-label="Distance from"></select>
+        </div>
+        <input type="range" id="dist" min="0.25" max="2" step="0.05" value="2">
+        <button class="linkish" id="pick" data-i18n="pick">Pick my own point on the map</button>
+      </div>
+      <div class="field two">
+        <label><span class="lbl" data-i18n="lease">Lease</span>
+          <select id="term">
+            <option value="" data-i18n="term_any">Any</option>
+            <option value="2027-28" data-i18n="term_2728">Fall 2027 (2027–28)</option>
+            <option value="now / 2026-27" data-i18n="term_now">Now / 2026–27 &amp; sublets</option>
+            <option value="unknown" data-i18n="term_unknown">Not stated</option>
+          </select></label>
+        <label><span class="lbl" data-i18n="sort">Sort</span>
+          <select id="sort">
+            <option value="dist" data-i18n="sort_dist">Closest</option>
+            <option value="price" data-i18n="sort_price">Cheapest per person</option>
+            <option value="rent" data-i18n="sort_rent">Lowest total rent</option>
+          </select></label>
+      </div>
+      <details class="more">
+        <summary data-i18n="more">More filters</summary>
+        <div class="checks">
+          <label><input type="checkbox" id="f-priced"> <span data-i18n="f_priced">Has a posted price</span></label>
+          <label><input type="checkbox" id="f-heat"> <span data-i18n="f_heat">Heat included</span></label>
+          <label><input type="checkbox" id="f-allutil"> <span data-i18n="f_allutil">All utilities included</span></label>
+          <label><input type="checkbox" id="f-net"> <span data-i18n="f_net">Internet included</span></label>
+          <label><input type="checkbox" id="f-cats"> <span data-i18n="f_cats">Cats allowed</span></label>
+          <label><input type="checkbox" id="f-dogs"> <span data-i18n="f_dogs">Dogs allowed</span></label>
+          <label><input type="checkbox" id="f-inunit"> <span data-i18n="f_inunit">In-unit laundry</span></label>
+          <label><input type="checkbox" id="f-parking"> <span data-i18n="f_parking">Parking offered</span></label>
+          <label><input type="checkbox" id="f-furn"> <span data-i18n="f_furn">Furnished</span></label>
+          <label><input type="checkbox" id="f-ac"> <span data-i18n="f_ac">Air conditioning</span></label>
+        </div>
+        <label class="ll"><span class="lbl" data-i18n="landlord">Landlord</span><select id="landlord"><option value="" data-i18n="all_landlords">All landlords</option></select></label>
+      </details>
+      <div class="result-bar">
+        <span id="count"></span>
+        <span class="bar-actions">
+          <button class="linkish" id="reset" data-i18n="reset">Reset</button>
+          <button class="linkish" id="export" data-i18n="export">Download CSV</button>
+        </span>
+      </div>
+    </div>
+    <ol class="results" id="results"></ol>
+  </aside>
+  <section class="mapwrap">
+    <div id="map" aria-label="Map of rentals"></div>
+    <div class="legend" id="legend"></div>
+    <div class="pick-hint" id="pick-hint" hidden data-i18n="pick_hint">Click the map to set your point. Press Esc to cancel.</div>
+    <article class="drawer" id="drawer" aria-live="polite" hidden></article>
+  </section>
+</main>
+
+<main id="view-gaps" class="view">
+  <div class="gaps-layout">
+    <aside class="gaps-list">
+      <p class="gaps-intro" data-i18n="gaps_intro">Every property below is missing something a renter needs, or has a value that disagrees between sources. Pick a landlord to see what to ask them.</p>
+      <div id="gap-summary"></div>
+      <ol id="gap-landlords"></ol>
+    </aside>
+    <section class="gaps-detail" id="gap-detail"></section>
+  </div>
+</main>
+
+<main id="view-sources" class="view">
+  <div class="sources" id="sources"></div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="data/properties.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
