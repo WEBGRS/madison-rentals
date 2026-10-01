@@ -98,6 +98,10 @@ select { padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--r
 .seg button { border: 0; border-radius: 0; padding: 3px 10px; font-size: 12px; }
 .seg button.on { background: var(--ink); color: var(--paper); }
 input[type=range] { width: 100%; accent-color: var(--lake); }
+.switch { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.switch input { accent-color: var(--lake); width: 15px; height: 15px; margin: 0; }
+.units tr.shared td { background: var(--paper); }
+.hidden-note { font-size: 13px; color: var(--ink-2); margin: 6px 0 0; }
 .linkish { border: 0; background: none; padding: 0; color: var(--lake-ink); font-size: 13px; text-decoration: underline; text-underline-offset: 2px; justify-self: start; }
 .more summary { font-size: 13px; font-weight: 600; color: var(--lake-ink); cursor: pointer; }
 .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin: 8px 0; font-size: 13px; }

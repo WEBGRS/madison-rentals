@@ -15,6 +15,7 @@
     f_inunit: '室内洗衣机', f_parking: '提供停车', f_furn: '带家具', f_ac: '有空调', landlord: '房东',
     all_landlords: '全部房东', reset: '重置', export: '下载 CSV', pick_hint: '点击地图设定你的位置，按 Esc 取消。',
     gaps_intro: '下面每个物业都缺少租房需要的信息，或不同来源之间数据冲突。选一个房东，查看要问他们什么。',
+    noshared: '不算合住（两人一间的每人价）',
   };
   const ZHF = {
     props: n => `<b>${n}</b> 个物业`, units: n => `<b>${n}</b> 个户型/单元`,
@@ -65,7 +66,7 @@
   const LM = META.landmarks;
   const state = {
     q: '', beds: new Set(), basis: 'bed', price: 3000, dist: 2, ref: 'Bascom Hall', refPt: LM['Bascom Hall'],
-    term: '', sort: 'dist', landlord: '', checks: {}, sel: null,
+    term: '', sort: 'dist', landlord: '', checks: {}, sel: null, noShared: safeGet('noshared') !== '0',
   };
 
   // ---------- map
@@ -110,6 +111,7 @@
   });
 
   function listingMatches(x) {
+    if (state.noShared && x.shared) return false;
     if (state.beds.size) {
       const b = x.beds;
       if (b == null) return false;
@@ -193,6 +195,7 @@
     if (state.term) s.term = state.term;
     if (state.sort !== 'dist') s.sort = state.sort;
     if (state.landlord) s.landlord = state.landlord;
+    if (!state.noShared) s.shared = 1;
     const c = Object.keys(state.checks).filter(k => state.checks[k]);
     if (c.length) s.checks = c;
     return s;
@@ -337,16 +340,18 @@
     if (!opened.has(id)) { opened.add(id); track('open', { p: id, d: Math.round(p.dist * 100) / 100 }); }
     const d = miles(state.refPt, [p.lat, p.lng]);
     const zh = lang === 'zh';
-    const ls = p._ls && current.includes(p) ? p._ls : p.listings;
+    const ls = p._ls && current.includes(p) ? p._ls : p.listings.filter(x => !(state.noShared && x.shared));
+    const hiddenShared = state.noShared ? p.listings.filter(x => x.shared).length : 0;
     const units = ls.map(x => {
       const what = [x.unit, x.plan].filter(Boolean).join(' · ') || '—';
       const bb = `${x.beds == null ? '?' : x.beds === 0 ? (zh ? '单间' : 'Studio') : x.beds + (zh ? '卧' : 'bd')}${x.baths != null ? ' / ' + x.baths + (zh ? '卫' : 'ba') : ''}`;
       const unv = x.bv && ['none', 'range-out'].includes(x.bv[0]);
-      const basisLbl = x.basis === 'bed' ? (zh ? '每人价' : 'per person') : (x.beds > 1 ? (unv ? (zh ? '整套价？' : 'whole unit?') : (zh ? '整套价' : 'whole unit')) : '');
-      const rent = x.rent ? money(x.rent) + (x.rent_max && x.rent_max !== x.rent ? '–' + money(x.rent_max) : '') + (basisLbl ? `<div class="basis ${x.basis}">${basisLbl}${bvTag(x.bv)}</div>` : '') : `<span class="nostate">${zh ? '未公开' : 'not posted'}</span>`;
-      const per = x.per_bed && x.pb_div ? `<div class="muted${unv ? ' unv' : ''}">≈ ${money(x.per_bed)}${zh ? '/人' : '/person'} (÷${x.beds})${unv ? (zh ? ' 未核实' : ' unconfirmed') : ''}</div>` : '';
+      const basisLbl = x.shared ? (zh ? '合住每人价（两人一间）' : 'per person, shared room')
+        : x.basis === 'bed' ? (zh ? '每人价' : 'per person') : (x.beds > 1 ? (unv ? (zh ? '整套价？' : 'whole unit?') : (zh ? '整套价' : 'whole unit')) : '');
+      const rent = x.rent ? money(x.rent) + (x.rent_max && x.rent_max !== x.rent ? '–' + money(x.rent_max) : '') + (basisLbl ? `<div class="basis ${x.basis}">${basisLbl}${x.shared ? '' : bvTag(x.bv)}</div>` : '') : `<span class="nostate">${zh ? '未公开' : 'not posted'}</span>`;
+      const per = x.per_bed && (x.pb_div || (x.shared && x.per_bed !== x.rent)) ? `<div class="muted${unv ? ' unv' : ''}">≈ ${money(x.per_bed)}${zh ? '/人' : '/person'}${x.pb_div ? ` (÷${x.beds})` : ''}${unv ? (zh ? ' 未核实' : ' unconfirmed') : ''}</div>` : '';
       const flags = [...(x.flags || []), ...((x.notes || []).filter(n => !/banner/i.test(n) && /call for|blocked|not stated|per room|per-bed|Shared|lease year/i.test(n)))];
-      return `<tr class="${x.flags ? 'flagged' : ''}">
+      return `<tr class="${x.flags ? 'flagged' : ''}${x.shared ? ' shared' : ''}">
         <td>${esc(what)}<div class="muted">${esc(PROV[x.src === 'uw_offcampus' ? 'uw' : 'official'][zh ? 1 : 0])}${x.status ? ' · ' + esc(x.status) : ''}</div>${flags.length ? `<div class="muted">${flags.map(esc).join('<br>')}</div>` : ''}</td>
         <td>${bb}${x.sqft ? `<div class="muted">${x.sqft.toLocaleString()} ft²</div>` : ''}</td>
         <td class="r">${rent}${per}</td>
@@ -391,6 +396,7 @@
       ${issues.length ? `<div class="issues">${issues.join('')}</div>` : ''}
       <h4>${zh ? '户型与价格' : 'Units and prices'} (${ls.length})</h4>
       <table class="units"><thead><tr><th>${zh ? '单元/户型' : 'Unit / plan'}</th><th>${zh ? '房型' : 'Size'}</th><th class="r">${zh ? '月租' : 'Rent'}</th><th>${zh ? '入住' : 'Move-in'}</th></tr></thead><tbody>${units}</tbody></table>
+      ${hiddenShared ? `<p class="hidden-note">${zh ? `另有 ${hiddenShared} 个合住价格（两人一间）未显示，关掉左侧"不算合住"可查看。` : `${hiddenShared} shared-room prices (two people per bedroom) are hidden; turn off "Leave out shared rooms" to see them.`}</p>` : ''}
       <h4>${zh ? '条件' : 'Terms'}</h4>
       <dl class="facts">${facts}${utilTxt}${fees}</dl>
       ${p.amenities ? `<h4>${zh ? '设施' : 'Amenities'}</h4><p class="desc">${p.amenities.map(esc).join(', ')}</p>` : ''}
@@ -457,13 +463,20 @@
   $('sort').onchange = e => { state.sort = e.target.value; render(); };
   const CHK = { 'f-priced': 'priced', 'f-heat': 'heat', 'f-allutil': 'allutil', 'f-net': 'net', 'f-cats': 'cats', 'f-dogs': 'dogs', 'f-inunit': 'inunit', 'f-parking': 'parking', 'f-furn': 'furn', 'f-ac': 'ac' };
   Object.entries(CHK).forEach(([id, k]) => { $(id).onchange = e => { state.checks[k] = e.target.checked; render(); }; });
+  $('f-noshared').checked = state.noShared;
+  $('f-noshared').onchange = e => {
+    state.noShared = e.target.checked; safeSet('noshared', state.noShared ? '1' : '0');
+    renderLegend(); render();
+    if (state.sel) select(state.sel, false);
+  };
   const llSel = $('landlord');
   const llCount = {};
   P.forEach(p => { if (p.landlord) llCount[p.landlord] = (llCount[p.landlord] || 0) + 1; });
   Object.entries(llCount).sort((a, b) => b[1] - a[1]).forEach(([n, c]) => llSel.add(new Option(`${n} (${c})`, n)));
   llSel.onchange = e => { state.landlord = e.target.value; render(); };
   $('reset').onclick = () => {
-    Object.assign(state, { q: '', beds: new Set(), price: state.basis === 'bed' ? 3000 : 12000, dist: 2, term: '', sort: 'dist', landlord: '', checks: {} });
+    Object.assign(state, { q: '', beds: new Set(), price: state.basis === 'bed' ? 3000 : 12000, dist: 2, term: '', sort: 'dist', landlord: '', checks: {}, noShared: true });
+    $('f-noshared').checked = true; safeSet('noshared', '1');
     $('q').value = ''; $('beds').querySelectorAll('button').forEach(b => b.classList.remove('on'));
     $('price').value = $('price').max; $('dist').value = 2; $('term').value = ''; $('sort').value = 'dist'; llSel.value = '';
     Object.keys(CHK).forEach(id => { $(id).checked = false; });
@@ -486,7 +499,7 @@
   // ---------- legend + header stats
   function renderLegend() {
     const zh = lang === 'zh';
-    $('legend').innerHTML = `<b>${zh ? '每人最低月租' : 'Lowest rent per person'}</b>` +
+    $('legend').innerHTML = `<b>${state.noShared ? (zh ? '每人最低月租（一人一间）' : 'Lowest rent, own bedroom') : (zh ? '每人最低月租（含合住）' : 'Lowest rent per person, incl. shared')}</b>` +
       [['p1', '< $900'], ['p2', '$900–1,199'], ['p3', '$1,200–1,499'], ['p4', '$1,500–1,899'], ['p5', '$1,900+']].map(([c, t]) => `<span class="row"><i style="background:var(--${c})"></i>${t}</span>`).join('') +
       `<span class="row"><i style="border:2px solid var(--p0)"></i>${zh ? '未公开价格' : 'No price posted'}</span>` +
       `<span class="row"><i style="background:var(--badger);border-radius:0;transform:rotate(45deg)"></i>${zh ? '参考点（圈 = 0.5 英里）' : 'Reference point, rings every 0.5 mi'}</span>`;
