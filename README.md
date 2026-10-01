@@ -1,6 +1,6 @@
 # Madison campus rentals map
 
-A map of rentals within two miles of the UW–Madison campus: 605 properties, 2,988 units or floor plans, 67 landlords, collected on 2026-09-30.
+A map of rentals within two miles of the UW–Madison campus: 605 properties, 2,988 units or floor plans, 67 landlords, collected on 2026-10-01.
 
 **Open the map: https://webgrs.github.io/madison-rentals/**
 

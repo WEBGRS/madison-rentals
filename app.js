@@ -154,6 +154,7 @@
       p._ls = ls;
       p._minBed = pb.length ? Math.min(...pb) : null;
       p._minBedDiv = p._minBed != null && ls.every(x => x.per_bed !== p._minBed || x.pb_div);
+      p._minBedUnv = p._minBed != null && ls.some(x => x.per_bed === p._minBed && x.bv && x.bv[0] === 'none');
       p._minRent = rents.length ? Math.min(...rents) : null;
       out.push(p);
     }
@@ -222,7 +223,7 @@
   }
 
   function priceHTML(p) {
-    if (p._minBed != null) return `<div class="price">${p._minBedDiv ? '≈' : ''}${money(p._minBed)}<small>${F().from} ${F().per_person}${p._minBedDiv ? (lang === 'zh' ? '（整套÷卧室）' : ' (unit ÷ beds)') : ''}</small></div>`;
+    if (p._minBed != null) return `<div class="price">${p._minBedDiv ? '≈' : ''}${money(p._minBed)}${p._minBedUnv ? '?' : ''}<small>${F().from} ${F().per_person}${p._minBedDiv ? (lang === 'zh' ? '（整套÷卧室）' : ' (unit ÷ beds)') : ''}${p._minBedUnv ? (lang === 'zh' ? '，未核实是否整套价' : ', not confirmed as whole-unit price') : ''}</small></div>`;
     if (p._minRent != null) return `<div class="price">${money(p._minRent)}<small>${F().per_unit}</small></div>`;
     return `<div class="price none">${F().no_price}</div>`;
   }
@@ -244,12 +245,12 @@
       const title = p.name || p.address || '—';
       const sub = [p.name ? p.address : null, p.landlord, `${p._d.toFixed(2)} mi · ${walkMin(p._d)} min`].filter(Boolean).map(esc).join(' — ');
       const has2728 = p._ls.some(x => x.term === '2027-28');
-      const gapsN = (p.gaps || []).filter(g => !/not listed/.test(g)).length;
+      const gapsN = (p.gaps || []).filter(g => !/not listed|rent basis/.test(g)).length;
       return `<li class="res${state.sel === p.id ? ' sel' : ''}" data-id="${esc(p.id)}" tabindex="0">
         <span class="dot ${bucket(p._minBed)}" style="${p._minBed != null ? `background:var(--${bucket(p._minBed)})` : ''}"></span>
         <h3>${esc(title)}</h3>${priceHTML(p)}
         <div class="sub">${sub}</div>
-        <div class="tags">${bedsSummary(p._ls) ? `<span class="tag">${esc(bedsSummary(p._ls))}</span>` : ''}${has2728 ? '<span class="tag t2728">2027–28</span>' : ''}${p.stale ? `<span class="tag gap">${lang === 'zh' ? '可能过期' : 'May be outdated'}</span>` : ''}${gapsN ? `<span class="tag gap">${F().gaps(gapsN)}</span>` : ''}</div>
+        <div class="tags">${bedsSummary(p._ls) ? `<span class="tag">${esc(bedsSummary(p._ls))}</span>` : ''}${has2728 ? '<span class="tag t2728">2027–28</span>' : ''}${(p.stale || []).some(s => /last updated|already passed|update date unknown|site not updated/i.test(s)) ? `<span class="tag gap">${lang === 'zh' ? '可能过期' : 'May be outdated'}</span>` : ''}${p._ls.some(x => x.bv && x.bv[0] === 'none') ? `<span class="tag gap">${lang === 'zh' ? '计价未核实' : 'Price basis unconfirmed'}</span>` : ''}${gapsN ? `<span class="tag gap">${F().gaps(gapsN)}</span>` : ''}</div>
       </li>`;
     }).join('');
     ol.innerHTML = html + (current.length > 400 ? `<li class="empty">${lang === 'zh' ? '只显示前 400 个，用筛选缩小范围。' : 'Showing the first 400. Filter to narrow down.'}</li>` : '');
@@ -308,6 +309,19 @@
     return esc(v) + provTag(p, k);
   }
 
+  const BV = {
+    text: ['listing says', '原文写明'], policy: ['landlord policy', '房东说明'], uw: ['UW label', 'UW 标注'],
+    price: ['by price', '按价格判断'], rule: ['inferred', '推断'], manual: ['checked', '人工核实'], none: ['unconfirmed', '未核实'],
+  };
+  function bvTag(bv) {
+    if (!bv) return '';
+    const zh = lang === 'zh';
+    const tip = (bv[1] ? `“${bv[1]}”` : '') + (bv[2] ? `\n${bv[2]}` : '') || (zh ? '没有找到房东说明价格是整套还是每人' : 'No statement found on whether this price is for the whole unit or per person');
+    const inner = esc(BV[bv[0]][zh ? 1 : 0]);
+    return bv[2] ? ` <a class="bv ${bv[0]}" href="${esc(bv[2])}" target="_blank" rel="noopener" title="${esc(tip)}">${inner}</a>`
+      : ` <span class="bv ${bv[0]}" title="${esc(tip)}">${inner}</span>`;
+  }
+
   function termLabel(t) {
     if (!t) return lang === 'zh' ? '未说明' : 'not stated';
     return t;
@@ -325,9 +339,10 @@
     const units = ls.map(x => {
       const what = [x.unit, x.plan].filter(Boolean).join(' · ') || '—';
       const bb = `${x.beds == null ? '?' : x.beds === 0 ? (zh ? '单间' : 'Studio') : x.beds + (zh ? '卧' : 'bd')}${x.baths != null ? ' / ' + x.baths + (zh ? '卫' : 'ba') : ''}`;
-      const basisLbl = x.basis === 'bed' ? (zh ? '每人价' : 'per person') : (x.beds > 1 ? (zh ? '整套价' : 'whole unit') : '');
-      const rent = x.rent ? money(x.rent) + (x.rent_max && x.rent_max !== x.rent ? '–' + money(x.rent_max) : '') + (basisLbl ? `<div class="basis ${x.basis}">${basisLbl}</div>` : '') : `<span class="nostate">${zh ? '未公开' : 'not posted'}</span>`;
-      const per = x.per_bed && x.pb_div ? `<div class="muted">≈ ${money(x.per_bed)}${zh ? '/人' : '/person'} (÷${x.beds})</div>` : '';
+      const unv = x.bv && x.bv[0] === 'none';
+      const basisLbl = x.basis === 'bed' ? (zh ? '每人价' : 'per person') : (x.beds > 1 ? (unv ? (zh ? '整套价？' : 'whole unit?') : (zh ? '整套价' : 'whole unit')) : '');
+      const rent = x.rent ? money(x.rent) + (x.rent_max && x.rent_max !== x.rent ? '–' + money(x.rent_max) : '') + (basisLbl ? `<div class="basis ${x.basis}">${basisLbl}${bvTag(x.bv)}</div>` : '') : `<span class="nostate">${zh ? '未公开' : 'not posted'}</span>`;
+      const per = x.per_bed && x.pb_div ? `<div class="muted${unv ? ' unv' : ''}">≈ ${money(x.per_bed)}${zh ? '/人' : '/person'} (÷${x.beds})${unv ? (zh ? ' 未核实' : ' unconfirmed') : ''}</div>` : '';
       const flags = [...(x.flags || []), ...((x.notes || []).filter(n => !/banner/i.test(n) && /call for|blocked|not stated|per room|per-bed|Shared|lease year/i.test(n)))];
       return `<tr class="${x.flags ? 'flagged' : ''}">
         <td>${esc(what)}<div class="muted">${esc(PROV[x.src === 'uw_offcampus' ? 'uw' : 'official'][zh ? 1 : 0])}${x.status ? ' · ' + esc(x.status) : ''}</div>${flags.length ? `<div class="muted">${flags.map(esc).join('<br>')}</div>` : ''}</td>
@@ -502,6 +517,7 @@
     'furnished?': ['Are the units furnished, unfurnished, or is furniture optional?', '带不带家具？可选吗？'],
     'furnished? (not listed)': ['Your listing does not mention furniture. Are the units furnished?', '房源没提家具，是否带家具？'],
     'contact info': ['(No phone or email found — find a contact first.)', '（没找到电话或邮箱，先找联系方式）'],
+    'rent basis (per person or whole unit)': ['Is the listed rent for the whole unit or per person?', '标价是整套的还是每人的？'],
   };
   const byLL = {};
   P.forEach(p => { if (p.gaps || p.conflicts || p.stale) (byLL[p.landlord || '(landlord unknown)'] ||= []).push(p); });
