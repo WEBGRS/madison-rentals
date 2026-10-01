@@ -848,7 +848,10 @@
       });
     } catch { /* offline or blocked */ }
     if (seq !== searchSeq) return;
-    const res = [...local, ...remote].slice(0, 8);
+    // Same name within ~500 ft counts as one result
+    const res = [];
+    [...local, ...remote].forEach(h => { if (!res.some(r => r.name.toLowerCase() === h.name.toLowerCase() && miles([r.lat, r.lng], [h.lat, h.lng]) < 0.1)) res.push(h); });
+    res.splice(8);
     placeMsg(res.length ? '' : (zh ? '没找到。试试英文名或门牌地址，或者在地图上点选。' : 'No match. Try the English name or a street address, or click the map.'));
     $('place-results').innerHTML = res.map((h, i) => `<li><button type="button" data-i="${i}"><b>${esc(h.name)}</b>${h.sub ? `<span>${esc(h.sub)}</span>` : ''}</button></li>`).join('');
     $('place-results').onclick = e => { const b = e.target.closest('button[data-i]'); if (b) { const h = res[+b.dataset.i]; choose(h.lat, h.lng, h.name, 'search'); } };
@@ -1060,7 +1063,7 @@
   track('view', { ref: refHost, w: innerWidth, deep: (location.hash.match(/p=([^&]+)/) || [])[1] || undefined });
 
   // Admin entry + deep link (#p=<id>) when served by server.py
-  if (location.protocol.startsWith('http')) {
+  if (/^(127\.0\.0\.1|localhost)$/.test(location.hostname)) {
     fetch('/api/status').then(r => {
       if (!r.ok) return;
       const a = Object.assign(document.createElement('a'), { href: '/admin/', className: 'lang', id: 'admin-link', textContent: lang === 'zh' ? '后台' : 'Admin' });
