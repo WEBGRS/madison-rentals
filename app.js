@@ -23,14 +23,12 @@
   };
   const ZHF = {
     props: n => `<b>${n}</b> 个物业`, units: n => `<b>${n}</b> 个户型/单元`,
-    price_lbl: (v, basis) => `${basis === 'bed' ? '每人' : '整套'}最高 <b>${v}</b>`,
     dist_lbl: v => `距离 ≤ <b>${v} 英里</b>`, count: n => `${n} 个物业`,
     from: '起', per_person: '/人', per_unit: '/月', no_price: '未公开价格', walk: (m, mi, r) => `步行约 <b>${m} 分钟</b>（直线 ${mi} 英里）到 ${r}`,
     gaps: n => `${n} 项缺失`, not_stated: '未说明',
   };
   const ENF = {
     props: n => `<b>${n}</b> properties`, units: n => `<b>${n}</b> units & floor plans`,
-    price_lbl: (v, basis) => `Max <b>${v}</b> ${basis === 'bed' ? 'per person' : 'whole unit'}`,
     dist_lbl: v => `Within <b>${v} mi</b> of`, count: n => `${n} ${n === 1 ? 'property' : 'properties'}`,
     from: 'from', per_person: '/person', per_unit: '/mo', no_price: 'No price posted',
     walk: (m, mi, r) => `About <b>${m} min</b> walk (${mi} mi straight line) to ${r}`,
@@ -63,13 +61,23 @@
   }
   const walkMin = mi => Math.round(mi * 1.25 * 20); // grid detour 1.25x, 3 mph
   const BUCKETS = [[0, 900, 'p1'], [900, 1200, 'p2'], [1200, 1500, 'p3'], [1500, 1900, 'p4'], [1900, 1e9, 'p5']];
+  const BUCKETS_UNIT = [[0, 1500, 'p1'], [1500, 2500, 'p2'], [2500, 3500, 'p3'], [3500, 5000, 'p4'], [5000, 1e9, 'p5']];
   const bucket = v => v == null ? 'p0' : BUCKETS.find(b => v >= b[0] && v < b[1])[2];
+  // Whole-unit rent of a listing: per-person prices times the people living there
+  const unitRent = x => x.rent == null ? null : x.basis === 'unit' ? x.rent : x.rent * Math.max(1, x.beds || 0) * (x.shared ? 2 : 1);
+  const priceBounds = () => (state.basis === 'bed' ? [500, 3000] : [800, 12000]);
+  // Price a property shows: lowest among its listings that pass the filters, per person or whole unit
+  const shownPrice = p => (state.basis === 'bed' ? p._minBed : p._minUnit);
+  const pbucket = p => {
+    const v = shownPrice(p);
+    return v == null ? 'p0' : (state.basis === 'bed' ? BUCKETS : BUCKETS_UNIT).find(b => v >= b[0] && v < b[1])[2];
+  };
   const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue('--' + n).trim();
 
   // ---------- state
   const LM = META.landmarks;
   const state = {
-    q: '', beds: new Set(), basis: 'bed', price: 3000, dist: 2, ref: 'Bascom Hall', refPt: LM['Bascom Hall'],
+    q: '', beds: new Set(), basis: 'bed', price: 3000, priceMin: 500, dist: 2, ref: 'Bascom Hall', refPt: LM['Bascom Hall'],
     term: '', sort: 'dist', landlord: '', checks: {}, sel: null, noShared: safeGet('noshared') !== '0', refKey: 'Bascom Hall',
   };
 
@@ -128,7 +136,7 @@
     if (!p) return;
     const m = markers.get(p.id);
     if (m) m.bringToFront();
-    L.circleMarker([p.lat, p.lng], { radius: 15, color: cssVar('ink'), weight: 2.5, fill: false, interactive: false }).addTo(selLayer);
+    L.marker([p.lat, p.lng], { interactive: false, keyboard: false, icon: L.divIcon({ className: '', html: '<span class="sel-ring"></span>', iconSize: [0, 0] }) }).addTo(selLayer);
   }
 
   // ---------- bus stops (Madison Metro GTFS via scraper/transit.py)
@@ -221,10 +229,10 @@
       if (state.term === 'unknown') { if (x.term) return false; }
       else if (x.term !== state.term) return false;
     }
-    const cap = state.basis === 'bed' ? 3000 : 12000;
-    if (state.price < cap) {
-      const v = state.basis === 'bed' ? x.per_bed : (x.basis === 'unit' ? x.rent : (x.beds ? x.rent * x.beds : null));
-      if (v == null || v > state.price) return false;
+    const [floor, cap] = priceBounds();
+    if (state.price < cap || state.priceMin > floor) {
+      const v = state.basis === 'bed' ? x.per_bed : unitRent(x);
+      if (v == null || (state.price < cap && v > state.price) || (state.priceMin > floor && v < state.priceMin)) return false;
     }
     if (state.checks.priced && !x.rent) return false;
     return true;
@@ -257,12 +265,14 @@
       p._minBedDiv = p._minBed != null && ls.every(x => x.per_bed !== p._minBed || x.pb_div);
       p._minBedUnv = p._minBed != null && ls.some(x => x.per_bed === p._minBed && x.bv && ['none', 'range-out'].includes(x.bv[0]));
       p._minRent = rents.length ? Math.min(...rents) : null;
+      const units = ls.map(unitRent).filter(v => v != null);
+      p._minUnit = units.length ? Math.min(...units) : null;
       out.push(p);
     }
     const key = state.sort;
     out.sort((a, b) => {
       if (key === 'price') return (a._minBed ?? 1e9) - (b._minBed ?? 1e9) || a._d - b._d;
-      if (key === 'rent') return (a._minRent ?? 1e9) - (b._minRent ?? 1e9) || a._d - b._d;
+      if (key === 'rent') return (a._minUnit ?? 1e9) - (b._minUnit ?? 1e9) || a._d - b._d;
       return a._d - b._d;
     });
     return out;
@@ -288,7 +298,8 @@
     if (state.q.trim()) s.q = state.q.trim().slice(0, 60);
     if (state.beds.size) s.beds = [...state.beds].sort();
     if (state.basis !== 'bed') s.basis = state.basis;
-    if (state.price < (state.basis === 'bed' ? 3000 : 12000)) s.price = state.price;
+    if (state.price < priceBounds()[1]) s.price = state.price;
+    if (state.priceMin > priceBounds()[0]) s.priceMin = state.priceMin;
     if (state.dist < 2) s.dist = state.dist;
     if (state.refKey !== 'Bascom Hall') s.ref = state.refKey.startsWith('place:') ? 'my place' : state.refKey;
     if (state.term) s.term = state.term;
@@ -317,8 +328,10 @@
     current = filtered();
     trackFilters();
     $('count').textContent = F().count(current.length);
-    const noCap = state.price >= (state.basis === 'bed' ? 3000 : 12000);
-    $('price-lbl').innerHTML = noCap ? (lang === 'zh' ? '价格<b>不限</b>' : 'Price: <b>any</b>') : F().price_lbl(money(state.price), state.basis);
+    const [pf, pc] = priceBounds();
+    const noCap = state.price >= pc && state.priceMin <= pf;
+    $('price-lbl').innerHTML = priceLabel();
+    syncFills();
     $('dist-lbl').innerHTML = state.dist >= 2 ? (lang === 'zh' ? '距离<b>不限</b> · 参考点' : 'Any distance from') : F().dist_lbl(state.dist.toFixed(2).replace(/0$/, ''));
     renderList();
     renderMarkers();
@@ -349,8 +362,38 @@
     window.scrollTo(0, 0);
   };
 
+  function priceLabel() {
+    const zh = lang === 'zh', [pf, pc] = priceBounds();
+    const who = state.basis === 'bed' ? (zh ? '每人' : 'per person') : (zh ? '整套' : 'whole unit');
+    const lo = money(state.priceMin), hi = money(state.price), noFloor = state.priceMin <= pf, noCap = state.price >= pc;
+    if (noFloor && noCap) return zh ? '价格<b>不限</b>' : 'Price: <b>any</b>';
+    if (noFloor) return zh ? `${who}最高 <b>${hi}</b>` : `Up to <b>${hi}</b> ${who}`;
+    if (noCap) return zh ? `${who}最低 <b>${lo}</b>` : `From <b>${lo}</b> ${who}`;
+    return zh ? `${who} <b>${lo}–${hi}</b>` : `<b>${lo}–${hi}</b> ${who}`;
+  }
+  // Colored part of the slider tracks
+  function syncFills() {
+    const [lo, hi] = priceBounds(), pct = v => ((v - lo) / (hi - lo)) * 100;
+    $('price-fill').style.left = pct(state.priceMin) + '%';
+    $('price-fill').style.right = (100 - pct(state.price)) + '%';
+    $('price-min').style.zIndex = state.priceMin > (lo + hi) / 2 ? 3 : 1;
+    $('dist-fill').style.left = '0';
+    $('dist-fill').style.right = (100 - ((state.dist - 0.25) / 1.75) * 100) + '%';
+  }
+  function setPriceRange() {
+    const [lo, hi] = priceBounds(), step = state.basis === 'bed' ? 50 : 100;
+    ['price-min', 'price'].forEach(id => { const el = $(id); el.min = lo; el.max = hi; el.step = step; });
+    state.priceMin = lo; state.price = hi;
+    $('price-min').value = lo; $('price').value = hi;
+  }
+
   function priceHTML(p) {
     const zh = lang === 'zh';
+    if (state.basis === 'unit') {
+      return p._minUnit != null
+        ? `<div class="price" title="${zh ? '整套月租（按人计价的按人数相加）' : 'Monthly rent for the whole unit (per-person prices added up)'}">${money(p._minUnit)}<small>${zh ? '整套起' : 'whole unit, from'}</small></div>`
+        : `<div class="price none">${F().no_price}</div>`;
+    }
     if (p._minBed != null) {
       const tip = (p._minBedDiv ? (zh ? '整套租金 ÷ 卧室数' : 'Whole-unit rent ÷ bedrooms') : (zh ? '每人价格' : 'Per-person price'))
         + (p._minBedUnv ? (zh ? '；未核实是否整套价' : '; not confirmed as a whole-unit price') : '');
@@ -382,7 +425,7 @@
       const has2728 = p._ls.some(x => x.term === '2027-28');
       const gapsN = (p.gaps || []).filter(g => !/not listed|rent basis/.test(g)).length;
       return `<li class="res${state.sel === p.id ? ' sel' : ''}" data-id="${esc(p.id)}" tabindex="0">
-        <span class="dot ${bucket(p._minBed)}" style="${p._minBed != null ? `background:var(--${bucket(p._minBed)})` : ''}"></span>
+        <span class="dot ${pbucket(p)}" style="${shownPrice(p) != null ? `background:var(--${pbucket(p)})` : ''}"></span>
         <h3>${esc(title)}</h3>${priceHTML(p)}
         <div class="sub">${sub}</div>
         <div class="tags">${bedsSummary(p._ls) ? `<span class="tag">${esc(bedsSummary(p._ls))}</span>` : ''}${has2728 ? '<span class="tag t2728">2027–28</span>' : ''}${(p.stale || []).some(s => /last updated|already passed|update date unknown|site not updated/i.test(s)) ? `<span class="tag gap">${lang === 'zh' ? '可能过期' : 'May be outdated'}</span>` : ''}${p._ls.some(x => x.bv && ['none', 'range-out'].includes(x.bv[0])) ? `<span class="tag gap">${lang === 'zh' ? '计价未核实' : 'Price basis unconfirmed'}</span>` : ''}${gapsN ? `<span class="tag gap">${F().gaps(gapsN)}</span>` : ''}</div>
@@ -394,14 +437,18 @@
   function renderMarkers() {
     markerLayer.clearLayers();
     markers.clear();
+    const zh = lang === 'zh';
     current.forEach(p => {
-      const b = bucket(p._minBed);
+      const b = pbucket(p);
       const col = cssVar(b);
       const m = L.circleMarker([p.lat, p.lng], {
         radius: state.sel === p.id ? 9 : 6, weight: b === 'p0' ? 2 : 1.5,
         color: b === 'p0' ? col : (dark ? '#10161D' : '#fff'), fillColor: col, fillOpacity: b === 'p0' ? 0.15 : 0.95,
       });
-      m.bindTooltip(`${esc(p.name || p.address)}<br>${p._minBed != null ? money(p._minBed) + F().per_person : (p._minRent != null ? money(p._minRent) + F().per_unit : F().no_price)}`, { direction: 'top' });
+      const v = shownPrice(p), n = p._ls.length;
+      const what = state.basis === 'bed' ? (zh ? '每人' : 'per person') : (zh ? '整套' : 'whole unit');
+      m.bindTooltip(`<b>${esc(p.name || p.address)}</b><br>${v != null ? (zh ? `${what} ${money(v)} 起` : `From ${money(v)} ${what}`) : F().no_price}`
+        + `<br><small>${zh ? `${n} 个户型符合筛选` : `${n} matching ${n === 1 ? 'unit or plan' : 'units or plans'}`}</small>`, { direction: 'top' });
       m.on('click', () => { if (!picking) select(p.id, false); });
       m.addTo(markerLayer);
       markers.set(p.id, m);
@@ -415,8 +462,8 @@
     if (map.getZoom() < 17) return;
     const bounds = map.getBounds();
     current.filter(p => bounds.contains([p.lat, p.lng])).slice(0, 160).forEach(p => {
-      const v = p._minBed != null ? money(p._minBed) : (p._minRent != null ? money(p._minRent) : '?');
-      const b = bucket(p._minBed);
+      const v = shownPrice(p) != null ? money(shownPrice(p)) : '?';
+      const b = pbucket(p);
       L.marker([p.lat, p.lng], {
         icon: L.divIcon({ className: '', html: `<span class="price-tag${v === '?' ? ' none' : ''}" style="--c:var(--${b})">${v}</span>`, iconSize: [0, 0] }),
       }).on('click', () => { if (!picking) select(p.id, false); }).addTo(tagLayer);
@@ -537,6 +584,12 @@
     [/^Shared = two people per bedroom, price per person$/i, () => '合住：两人一间，价格为每人'],
     [/^per-bed space (\$[\d,]+); entire unit (\$[\d,]+)$/i, (_, a, b) => `每床位 ${a}；整套 ${b}`],
     [/^floor plan page blocked by Cloudflare during scrape$/i, () => '抓取时户型页被 Cloudflare 拦截'],
+    [/^Rent basis: (.+) leases by the bed; price treated as per person$/i, (_, n) => `计价：${n} 按床位出租，价格按每人算`],
+    [/^Rent basis: listing says "(.+)"; price treated as per person$/i, (_, q) => `计价：原文写着“${q}”，价格按每人算`],
+    [/^Rent basis: (\$[\d,]+) for (\d+) bedrooms is too low for a whole unit; treated as per person( \(confirm\))?$/i, (_, a, b, c) => `计价：${b} 卧整套只要 ${a} 太低，按每人算${c ? '（待确认）' : ''}`],
+    [/^Rent basis: sublet at (\$[\d,]+) for a (\d+)bedroom unit; likely one room, treated as per person$/i, (_, a, b) => `计价：${b} 卧转租 ${a}，多半是一间，按每人算`],
+    [/^rent basis unclear: listed per person, but too high for one person$/i, () => '计价不清楚：标的是每人价，但一个人付这个价太高'],
+    [/^Rent basis unclear: price is outside the usual \$800–1,500 per person either way$/i, () => '计价不清楚：无论按每人还是整套，都不在常见的每人 $800–1,500 区间'],
   ];
   function zhNote(s) {
     if (lang !== 'zh') return s;
@@ -559,10 +612,13 @@
     const planN = {};
     ls.forEach(x => { if (x.plan) planN[x.plan] = (planN[x.plan] || 0) + 1; });
     const noisyPlan = pl => pl && ls.length >= 4 && planN[pl] >= Math.max(3, ls.length * 0.3) && !/bed|bath|studio|卧|plan|floor/i.test(pl);
+    const bbOf = x => `${x.beds == null ? '?' : x.beds === 0 ? (zh ? '单间' : 'Studio') : x.beds + (zh ? '卧' : 'bd')}${x.baths != null ? ' / ' + x.baths + (zh ? '卫' : 'ba') : ''}`;
+    const fpName = x => (x.plan || '').split(' — ')[0] || (zh ? '户型图' : 'Floor plan');
+    const fpCap = x => [fpName(x), bbOf(x), x.sqft ? x.sqft.toLocaleString() + ' ft²' : ''].filter(Boolean).join(' · ');
     const unitRow = x => {
       const plan = noisyPlan(x.plan) && x.unit ? null : x.plan;
       const what = [x.unit, plan].filter(Boolean).join(' · ') || '—';
-      const bb = `${x.beds == null ? '?' : x.beds === 0 ? (zh ? '单间' : 'Studio') : x.beds + (zh ? '卧' : 'bd')}${x.baths != null ? ' / ' + x.baths + (zh ? '卫' : 'ba') : ''}`;
+      const bb = bbOf(x);
       const unv = x.bv && ['none', 'range-out'].includes(x.bv[0]);
       const basisLbl = x.shared ? (zh ? '合住每人价（两人一间）' : 'per person, shared room')
         : x.basis === 'bed' ? (zh ? '每人价' : 'per person') : (x.beds > 1 ? (unv ? (zh ? '整套价？' : 'whole unit?') : (zh ? '整套价' : 'whole unit')) : '');
@@ -570,7 +626,7 @@
       const per = x.per_bed && (x.pb_div || (x.shared && x.per_bed !== x.rent)) ? `<div class="muted${unv ? ' unv' : ''}">≈ ${money(x.per_bed)}${zh ? '/人' : '/person'}${x.pb_div ? ` (÷${x.beds})` : ''}${unv ? (zh ? ' 未核实' : ' unconfirmed') : ''}</div>` : '';
       const flags = [...(x.flags || []), ...((x.notes || []).filter(n => !/banner/i.test(n) && /call for|blocked|not stated|per room|per-bed|Shared|lease year/i.test(n)))];
       return `<tr class="${x.flags ? 'flagged' : ''}${x.shared ? ' shared' : ''}">
-        <td class="u-what">${esc(what)}<div class="muted src">${esc(PROV[x.src === 'uw_offcampus' ? 'uw' : 'official'][zh ? 1 : 0])}${x.status ? ' · ' + esc(statusLabel(x.status)) : ''}</div>${flags.length ? `<div class="muted fl">${flags.map(f => esc(zhNote(f))).join('<br>')}</div>` : ''}</td>
+        <td class="u-what">${esc(what)}${x.fpimg ? `<button type="button" class="fp-link" data-img="${esc(x.fpimg)}" data-cap="${esc(fpCap(x))}">${zh ? '户型图' : 'Floor plan'}</button>` : ''}<div class="muted src">${esc(PROV[x.src === 'uw_offcampus' ? 'uw' : 'official'][zh ? 1 : 0])}${x.status ? ' · ' + esc(statusLabel(x.status)) : ''}</div>${flags.length ? `<div class="muted fl">${flags.map(f => esc(zhNote(f))).join('<br>')}</div>` : ''}</td>
         <td class="u-size">${bb}${x.sqft ? `<div class="muted">${x.sqft.toLocaleString()} ft²</div>` : ''}</td>
         <td class="r u-rent">${rent}${per}</td>
         <td class="u-when">${esc(moveIn(x.avail))}${termRedundant(x) ? '' : `<div class="muted">${esc(termLabel(x.term))}</div>`}</td>
@@ -585,20 +641,26 @@
     const units = [...groups.entries()].map(([k, xs], gi) => {
       const b = xs[0].beds;
       const label = (xs[0].shared ? (zh ? '合住 · ' : 'Shared · ') : '') + (b == null ? '?' : b === 0 ? (zh ? '单间' : 'Studio') : zh ? `${b} 卧` : `${b} bedroom${b > 1 ? 's' : ''}`);
-      const pp = range(xs.map(x => x.per_bed));
+      const unitMode = state.basis === 'unit';
+      const pp = range(xs.map(unitMode ? unitRent : x => x.per_bed));
       const sq = range(xs.map(x => x.sqft), v => v.toLocaleString());
+      // Distinct floor plan drawings in this group
+      const fps = [...new Map(xs.filter(x => x.fpimg).map(x => [x.fpimg, x])).values()].slice(0, 10);
       const summary = [
         zh ? `${xs.length} 个` : `${xs.length} listed`,
-        pp ? (zh ? `每人 ${pp}` : `${pp} per person`) : (zh ? '价格未公开' : 'no price posted'),
+        pp ? (zh ? `${unitMode ? '整套' : '每人'} ${pp}` : `${pp} ${unitMode ? 'whole unit' : 'per person'}`) : (zh ? '价格未公开' : 'no price posted'),
         sq ? `${sq} ft²` : '',
+        fps.length ? (zh ? '有户型图' : 'floor plans') : '',
       ].filter(Boolean).join(' · ');
+      const strip = fps.length ? `<div class="fp-strip">${fps.map(x => `<button type="button" class="fp-thumb" data-img="${esc(x.fpimg)}" data-cap="${esc(fpCap(x))}"><img src="${esc(x.fpimg)}" alt="${esc(fpCap(x))}" loading="lazy" onerror="this.parentElement.remove()"><span>${esc(fpName(x))}</span></button>`).join('')}</div>` : '';
       return `<details class="ugroup"${openAll || gi === 0 ? ' open' : ''}><summary><b>${label}</b><span>${esc(summary)}</span></summary>
-        <table class="units"><tbody>${xs.map(unitRow).join('')}</tbody></table></details>`;
+        ${strip}<table class="units"><tbody>${xs.map(unitRow).join('')}</tbody></table></details>`;
     }).join('');
-    const ppAll = range(ls.map(x => x.per_bed));
+    const unitMode = state.basis === 'unit';
+    const ppAll = range(ls.map(unitMode ? unitRent : x => x.per_bed));
     const bedsAll = bedsSummary(ls);
     const terms = [...new Set(ls.map(x => x.term).filter(Boolean))].filter(t => t !== 'past date').slice(0, 2);
-    const overview = [ppAll ? (zh ? `每人 ${ppAll}` : `${ppAll} per person`) : '', bedsAll, zh ? `${ls.length} 个户型` : `${ls.length} listed`, ...terms.map(termLabel)]
+    const overview = [ppAll ? (zh ? `${unitMode ? '整套' : '每人'} ${ppAll}` : `${ppAll} ${unitMode ? 'whole unit' : 'per person'}`) : '', bedsAll, zh ? `${ls.length} 个户型` : `${ls.length} listed`, ...terms.map(termLabel)]
       .filter(Boolean).map(s => `<span>${esc(s)}</span>`).join('');
     const facts = [
       ['utilities', zh ? '含的水电' : 'Included', p.utilities],
@@ -658,6 +720,21 @@
     drawPlaceLines(p);
     if (pan) map.panTo([p.lat, p.lng]);
   }
+  // Floor plan drawings open full size
+  function openLightbox(src, cap) {
+    $('lb-img').src = src;
+    $('lb-img').alt = cap || '';
+    $('lb-cap').textContent = cap || '';
+    $('lightbox').hidden = false;
+    $('lb-close').focus();
+    track('plan', { p: state.sel });
+  }
+  function closeLightbox() { $('lightbox').hidden = true; $('lb-img').removeAttribute('src'); }
+  $('lightbox').onclick = e => { if (e.target === $('lightbox') || e.target.closest('#lb-close')) closeLightbox(); };
+  $('drawer').addEventListener('click', e => {
+    const b = e.target.closest('[data-img]');
+    if (b) openLightbox(b.dataset.img, b.dataset.cap);
+  });
   function closeDrawer() {
     $('drawer').hidden = true;
     document.body.classList.remove('m-drawer');
@@ -859,7 +936,7 @@
   $('place-search').onclick = searchPlace;
   $('place-q').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); searchPlace(); } };
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { if (picking) stopPick(); else closeDrawer(); }
+    if (e.key === 'Escape') { if (!$('lightbox').hidden) closeLightbox(); else if (picking) stopPick(); else closeDrawer(); }
   });
 
   $('q').oninput = e => { state.q = e.target.value; render(); };
@@ -873,11 +950,11 @@
     const b = e.target.closest('button'); if (!b) return;
     state.basis = b.dataset.basis;
     $('basis').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
-    const pr = $('price');
-    if (state.basis === 'bed') { pr.min = 500; pr.max = 3000; pr.step = 50; } else { pr.min = 800; pr.max = 12000; pr.step = 100; }
-    pr.value = pr.max; state.price = +pr.max; render();
+    setPriceRange(); renderLegend(); render();
   };
-  $('price').oninput = e => { state.price = +e.target.value; render(); };
+  // Two thumbs on one track; neither may pass the other
+  $('price-min').oninput = e => { state.priceMin = Math.min(+e.target.value, state.price - +e.target.step); e.target.value = state.priceMin; render(); };
+  $('price').oninput = e => { state.price = Math.max(+e.target.value, state.priceMin + +e.target.step); e.target.value = state.price; render(); };
   $('dist').oninput = e => { state.dist = +e.target.value; render(); };
   $('term').onchange = e => { state.term = e.target.value; render(); };
   $('sort').onchange = e => { state.sort = e.target.value; render(); };
@@ -898,7 +975,7 @@
     Object.assign(state, { q: '', beds: new Set(), price: state.basis === 'bed' ? 3000 : 12000, dist: 2, term: '', sort: 'dist', landlord: '', checks: {}, noShared: true });
     $('f-noshared').checked = true; safeSet('noshared', '1');
     $('q').value = ''; $('beds').querySelectorAll('button').forEach(b => b.classList.remove('on'));
-    $('price').value = $('price').max; $('dist').value = 2; $('term').value = ''; $('sort').value = 'dist'; llSel.value = '';
+    setPriceRange(); $('dist').value = 2; $('term').value = ''; $('sort').value = 'dist'; llSel.value = '';
     Object.keys(CHK).forEach(id => { $(id).checked = false; });
     render();
   };
@@ -921,8 +998,12 @@
     const zh = lang === 'zh';
     const lgOpen = safeGet('legend') ? safeGet('legend') === '1' : !matchMedia('(max-width: 860px)').matches;
     $('legend').classList.toggle('closed', !lgOpen);
-    $('legend').innerHTML = `<button class="lg-head" type="button" aria-expanded="${lgOpen}">${state.noShared ? (zh ? '每人最低月租（一人一间）' : 'Lowest rent, own bedroom') : (zh ? '每人最低月租（含合住）' : 'Lowest rent per person, incl. shared')}</button><div class="lg-body">` +
-      [['p1', '< $900'], ['p2', '$900–1,199'], ['p3', '$1,200–1,499'], ['p4', '$1,500–1,899'], ['p5', '$1,900+']].map(([c, t]) => `<span class="row"><i style="background:var(--${c})"></i>${t}</span>`).join('') +
+    const unitMode = state.basis === 'unit';
+    const head = unitMode ? (zh ? '整套最低月租' : 'Lowest whole-unit rent')
+      : state.noShared ? (zh ? '每人最低月租（一人一间）' : 'Lowest rent, own bedroom') : (zh ? '每人最低月租（含合住）' : 'Lowest rent per person, incl. shared');
+    $('legend').innerHTML = `<button class="lg-head" type="button" aria-expanded="${lgOpen}">${head}</button><div class="lg-body">` +
+      (unitMode ? [['p1', '< $1,500'], ['p2', '$1,500–2,499'], ['p3', '$2,500–3,499'], ['p4', '$3,500–4,999'], ['p5', '$5,000+']]
+        : [['p1', '< $900'], ['p2', '$900–1,199'], ['p3', '$1,200–1,499'], ['p4', '$1,500–1,899'], ['p5', '$1,900+']]).map(([c, t]) => `<span class="row"><i style="background:var(--${c})"></i>${t}</span>`).join('') +
       `<span class="row"><i style="border:2px solid var(--p0)"></i>${zh ? '未公开价格' : 'No price posted'}</span>` +
       `<span class="row"><i style="background:var(--badger);border-radius:0;transform:rotate(45deg)"></i>${zh ? '参考点（圈 = 0.5 英里）' : 'Reference point, rings every 0.5 mi'}</span>` +
       (places.length ? `<span class="row"><i class="lg-place"></i>${zh ? '我常去的地方' : 'My places'}</span>` : '') +

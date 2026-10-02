@@ -427,3 +427,49 @@ textarea.draft { width: 100%; min-height: 260px; font: 13px/1.5 "Instrument Sans
 /* Picking a spot: every click goes to the map, not to icons on it */
 .leaflet-container.picking { cursor: crosshair; }
 .leaflet-container.picking .leaflet-marker-icon { pointer-events: none !important; }
+
+/* Range sliders: shared track, colored between the thumbs */
+.dual { position: relative; height: 24px; }
+.dual-track { position: absolute; left: 9px; right: 9px; top: 50%; height: 4px; margin-top: -2px; border-radius: 2px; background: var(--line); }
+.dual-fill { position: absolute; top: 0; bottom: 0; left: 0; right: 0; border-radius: 2px; background: var(--lake); }
+.dual input[type=range] {
+  position: absolute; left: 0; top: 0; width: 100%; height: 24px; margin: 0;
+  background: none; pointer-events: none; -webkit-appearance: none; appearance: none;
+}
+.dual input[type=range]::-webkit-slider-runnable-track { background: none; height: 24px; }
+.dual input[type=range]::-moz-range-track { background: none; }
+.dual input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; pointer-events: auto; width: 18px; height: 18px; margin-top: 3px; border-radius: 50%;
+  background: var(--card); border: 2px solid var(--lake); box-shadow: 0 1px 3px rgba(0, 0, 0, .25); cursor: grab;
+}
+.dual input[type=range]::-moz-range-thumb {
+  pointer-events: auto; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--card); border: 2px solid var(--lake); box-shadow: 0 1px 3px rgba(0, 0, 0, .25); cursor: grab;
+}
+.dual input[type=range]:focus-visible { outline: none; }
+.dual input[type=range]:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--lake); outline-offset: 2px; }
+.dual input[type=range]:focus-visible::-moz-range-thumb { outline: 2px solid var(--lake); outline-offset: 2px; }
+
+/* Selected property: ring fades black -> white -> black so it shows on any background */
+.sel-ring {
+  position: absolute; left: 0; top: 0; width: 32px; height: 32px; margin: -16px 0 0 -16px; border-radius: 50%;
+  border: 3px solid #000; box-shadow: 0 0 0 1.5px #fff, inset 0 0 0 1.5px #fff; pointer-events: none;
+  animation: sel-flip 1.2s ease-in-out infinite alternate;
+}
+@keyframes sel-flip { to { border-color: #fff; box-shadow: 0 0 0 1.5px #000, inset 0 0 0 1.5px #000; } }
+
+/* Floor plan drawings */
+.fp-strip { display: flex; gap: 8px; overflow-x: auto; padding: 2px 12px 10px; }
+.fp-thumb {
+  flex: none; display: grid; gap: 4px; width: 132px; padding: 0; overflow: hidden; text-align: left; cursor: zoom-in;
+  border: 1px solid var(--line); border-radius: var(--radius-s); background: #fff;
+}
+.fp-thumb img { display: block; width: 100%; height: 96px; object-fit: contain; background: #fff; }
+.fp-thumb span { padding: 0 8px 6px; font-size: 12px; font-weight: 600; color: #1D2430; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fp-thumb:hover, .fp-thumb:focus-visible { border-color: var(--lake); }
+.fp-link { border: 0; background: none; padding: 0; margin-left: 8px; font-size: 12px; color: var(--lake-ink); text-decoration: underline; text-underline-offset: 2px; cursor: zoom-in; }
+.lightbox { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 24px; background: rgba(10, 14, 20, .82); }
+.lightbox figure { margin: 0; max-width: min(1000px, 100%); display: grid; gap: 10px; justify-items: center; }
+.lightbox img { max-width: 100%; max-height: calc(100vh - 110px); object-fit: contain; background: #fff; border-radius: var(--radius-s); }
+.lightbox figcaption { color: #fff; font-size: 14px; text-align: center; }
+.lb-close { position: absolute; top: 14px; right: 16px; width: 40px; height: 40px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .16); color: #fff; font-size: 24px; line-height: 1; }

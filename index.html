@@ -10,8 +10,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<link rel="stylesheet" href="style.css">
-<script src="theme.js"></script>
+<link rel="stylesheet" href="style.css?v=faa55c62">
+<script src="theme.js?v=f138724b"></script>
 </head>
 <body>
 <header class="top">
@@ -72,7 +72,11 @@
             <button data-basis="bed" class="on" data-i18n="per_person">Per person</button><button data-basis="unit" data-i18n="whole_unit">Whole unit</button>
           </div>
         </div>
-        <input type="range" id="price" min="500" max="3000" step="50" value="3000">
+        <div class="dual" id="price-range">
+          <div class="dual-track"><div class="dual-fill" id="price-fill"></div></div>
+          <input type="range" id="price-min" min="500" max="3000" step="50" value="500" aria-label="Lowest price">
+          <input type="range" id="price" min="500" max="3000" step="50" value="3000" aria-label="Highest price">
+        </div>
         <label class="switch"><input type="checkbox" id="f-noshared" checked> <span data-i18n="noshared">Leave out shared rooms (two people per bedroom)</span></label>
       </div>
       <div class="field">
@@ -80,7 +84,10 @@
           <span class="lbl" id="dist-lbl"></span>
           <select id="ref" aria-label="Distance from"></select>
         </div>
-        <input type="range" id="dist" min="0.25" max="2" step="0.05" value="2">
+        <div class="dual">
+          <div class="dual-track"><div class="dual-fill" id="dist-fill"></div></div>
+          <input type="range" id="dist" min="0.25" max="2" step="0.05" value="2" aria-label="Distance">
+        </div>
       </div>
       <div class="field two">
         <label><span class="lbl" data-i18n="lease">Lease</span>
@@ -147,10 +154,14 @@
   <div class="sources" id="sources"></div>
 </main>
 
+<div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Floor plan">
+  <figure><img id="lb-img" alt=""><figcaption id="lb-cap"></figcaption></figure>
+  <button class="lb-close" id="lb-close" type="button" aria-label="Close">×</button>
+</div>
 <button id="viewswitch" class="viewswitch" type="button"></button>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="data/transit.js"></script>
-<script src="data/properties.js"></script>
-<script src="app.js"></script>
+<script src="data/transit.js?v=7d94bb8b"></script>
+<script src="data/properties.js?v=211b0ac7"></script>
+<script src="app.js?v=cab311ba"></script>
 </body>
 </html>
