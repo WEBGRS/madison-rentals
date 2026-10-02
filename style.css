@@ -160,6 +160,7 @@ input[type=range] { width: 100%; accent-color: var(--lake); }
 .tag { font-size: 12px; padding: 1px 7px; border-radius: 4px; background: var(--paper); border: 1px solid var(--line); }
 .tag.t2728 { border-color: var(--lake); color: var(--lake-ink); }
 .tag.gap { background: var(--warn-wash); border-color: transparent; color: var(--warn); }
+.tag.metric { background: var(--lake-wash); border-color: transparent; color: var(--lake-ink); font-weight: 600; }
 .empty { padding: 24px 16px; color: var(--ink-2); }
 
 /* Map */

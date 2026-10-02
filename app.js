@@ -9,8 +9,8 @@
     tagline: 'UW–Madison 周边租房', tab_map: '地图', tab_gaps: '缺失信息', tab_sources: '数据来源',
     search_ph: '街道、楼名或房东', bedrooms: '卧室数', studio: '单间', per_person: '每人', whole_unit: '整套',
     lease: '租期', term_any: '不限', term_2728: '2027 秋季（2027–28）',
-    term_now: '现在 / 2026–27 和转租', term_unknown: '未说明', sort: '排序', sort_dist: '最近',
-    sort_price: '每人最便宜', sort_rent: '总租金最低', more: '更多筛选', f_priced: '有公开价格',
+    term_now: '现在 / 2026–27 和转租', term_unknown: '未说明', sort: '排序',
+    more: '更多筛选', f_priced: '有公开价格',
     f_heat: '含暖气', f_allutil: '全包水电', f_net: '含网络', f_cats: '可养猫', f_dogs: '可养狗',
     f_inunit: '室内洗衣机', f_parking: '提供停车', f_furn: '带家具', f_ac: '有空调', landlord: '房东',
     all_landlords: '全部房东', reset: '重置', export: '下载 CSV', pick_hint: '点地图选一个位置。', pick_cancel: '取消',
@@ -275,15 +275,69 @@
       p._minRent = rents.length ? Math.min(...rents) : null;
       const units = ls.map(unitRent).filter(v => v != null);
       p._minUnit = units.length ? Math.min(...units) : null;
+      const sq = ls.map(x => x.sqft).filter(v => v >= 150);
+      p._maxSqft = sq.length ? Math.max(...sq) : null;
+      const psf = ls.filter(x => x.sqft >= 150 && unitRent(x) != null).map(x => unitRent(x) / x.sqft);
+      p._ppsf = psf.length ? Math.min(...psf) : null;
+      // Earliest move-in; 'now' and dates already past count as today
+      const today = todayISO();
+      const moves = ls.map(x => x.avail === 'now' ? today : /^\d{4}-\d{2}-\d{2}$/.test(x.avail || '') ? (x.avail < today ? today : x.avail) : null).filter(Boolean).sort();
+      p._moveIn = moves[0] || null;
       out.push(p);
     }
-    const key = state.sort;
+    // Properties without the sorted value go last; ties fall back to distance
+    const S = SORTS[state.sort] || SORTS.dist, dir = S.dir || 1;
+    const val = new Map(out.map(p => [p, S.val(p)]));
     out.sort((a, b) => {
-      if (key === 'price') return (a._minBed ?? 1e9) - (b._minBed ?? 1e9) || a._d - b._d;
-      if (key === 'rent') return (a._minUnit ?? 1e9) - (b._minUnit ?? 1e9) || a._d - b._d;
-      return a._d - b._d;
+      const va = val.get(a), vb = val.get(b);
+      if (va == null || vb == null) return (va == null) - (vb == null) || a._d - b._d;
+      return dir * (va < vb ? -1 : va > vb ? 1 : 0) || a._d - b._d;
     });
     return out;
+  }
+
+  // ---------- sort orders
+  const todayISO = () => new Date().toISOString().slice(0, 10);
+  const gapCount = p => (p.gaps || []).filter(g => !/not listed|rent basis/.test(g)).length;
+  // Walking distance to the closest bus stop, computed once per property
+  const busDist = p => {
+    if (!TR) return null;
+    if (p._busD === undefined) p._busD = Math.min(...TR.stops.map(([la, ln]) => miles([p.lat, p.lng], [la, ln])));
+    return p._busD;
+  };
+  const placesAvg = p => places.length ? places.reduce((t, pl) => t + miles([p.lat, p.lng], [pl.lat, pl.lng]), 0) / places.length : null;
+  const SORTS = {
+    dist: { g: 'd', zh: '距离最近', en: 'Closest', val: p => p._d },
+    bus: { g: 'd', zh: '离公交站最近', en: 'Nearest bus stop', val: busDist,
+      chip: v => lang === 'zh' ? `步行 ${Math.max(1, walkMin(v))} 分钟到公交站` : `${Math.max(1, walkMin(v))} min walk to a bus stop` },
+    places: { g: 'd', zh: '离常去地点最近', en: 'Closest to my places', val: placesAvg,
+      chip: v => lang === 'zh' ? `到常去地点平均 ${mi2(v)}` : `${mi2(v)} to my places on average` },
+    price: { g: 'p', zh: '价格从低到高', en: 'Price: low to high', val: p => shownPrice(p) },
+    price_desc: { g: 'p', zh: '价格从高到低', en: 'Price: high to low', val: p => shownPrice(p), dir: -1 },
+    ppsf: { g: 'p', zh: '每平方英尺最便宜', en: 'Cheapest per sq ft', val: p => p._ppsf,
+      chip: v => lang === 'zh' ? `整套每平方英尺 $${v.toFixed(2)}` : `$${v.toFixed(2)} per sq ft, whole unit` },
+    size: { g: 'u', zh: '面积最大', en: 'Largest unit', val: p => p._maxSqft, dir: -1,
+      chip: v => lang === 'zh' ? `最大 ${v.toLocaleString()} ft²` : `Up to ${v.toLocaleString()} ft²` },
+    movein: { g: 'u', zh: '最早能入住', en: 'Earliest move-in', val: p => p._moveIn,
+      chip: v => v <= todayISO() ? (lang === 'zh' ? '现在就能入住' : 'Move in now') : (lang === 'zh' ? `${dateLabel(v)} 起可入住` : `Move in from ${dateLabel(v)}`) },
+    choice: { g: 'u', zh: '可选户型最多', en: 'Most units to choose from', val: p => p._ls.length, dir: -1,
+      chip: v => lang === 'zh' ? `${v} 个户型可选` : `${v} to choose from` },
+    complete: { g: 'u', zh: '缺失信息最少', en: 'Fewest missing details', val: gapCount },
+  };
+  const SORT_GROUPS = [['d', '距离', 'Distance'], ['p', '价格', 'Price'], ['u', '房源', 'Rentals']];
+  function fillSort() {
+    const zh = lang === 'zh';
+    const off = k => (k === 'places' && !places.length) || (k === 'bus' && !TR);
+    if (!SORTS[state.sort] || off(state.sort)) state.sort = 'dist';
+    $('sort').innerHTML = SORT_GROUPS.map(([g, gz, ge]) => `<optgroup label="${zh ? gz : ge}">` + Object.entries(SORTS).filter(([, s]) => s.g === g).map(([k, s]) =>
+      `<option value="${k}"${off(k) ? ' disabled' : ''}>${zh ? s.zh : s.en}${k === 'places' && off(k) ? (zh ? '（先添加地点）' : ' (add a place first)') : ''}</option>`).join('') + '</optgroup>').join('');
+    $('sort').value = state.sort;
+  }
+  // The value behind the current order, shown on each list item
+  function sortChip(p) {
+    const S = SORTS[state.sort];
+    const v = S && S.chip ? S.val(p) : null;
+    return v == null ? '' : `<span class="tag metric">${esc(S.chip(v))}</span>`;
   }
 
   // ---------- anonymous usage events (public build only; #notrack opts this browser out)
@@ -436,7 +490,7 @@
         <span class="dot ${pbucket(p)}" style="${shownPrice(p) != null ? `background:var(--${pbucket(p)})` : ''}"></span>
         <h3>${esc(title)}</h3>${priceHTML(p)}
         <div class="sub">${sub}</div>
-        <div class="tags">${bedsSummary(p._ls) ? `<span class="tag">${esc(bedsSummary(p._ls))}</span>` : ''}${has2728 ? '<span class="tag t2728">2027–28</span>' : ''}${(p.stale || []).some(s => /last updated|already passed|update date unknown|site not updated/i.test(s)) ? `<span class="tag gap">${lang === 'zh' ? '可能过期' : 'May be outdated'}</span>` : ''}${p._ls.some(x => x.bv && ['none', 'range-out'].includes(x.bv[0])) ? `<span class="tag gap">${lang === 'zh' ? '计价未核实' : 'Price basis unconfirmed'}</span>` : ''}${gapsN ? `<span class="tag gap">${F().gaps(gapsN)}</span>` : ''}</div>
+        <div class="tags">${sortChip(p)}${bedsSummary(p._ls) ? `<span class="tag">${esc(bedsSummary(p._ls))}</span>` : ''}${has2728 ? '<span class="tag t2728">2027–28</span>' : ''}${(p.stale || []).some(s => /last updated|already passed|update date unknown|site not updated/i.test(s)) ? `<span class="tag gap">${lang === 'zh' ? '可能过期' : 'May be outdated'}</span>` : ''}${p._ls.some(x => x.bv && ['none', 'range-out'].includes(x.bv[0])) ? `<span class="tag gap">${lang === 'zh' ? '计价未核实' : 'Price basis unconfirmed'}</span>` : ''}${gapsN ? `<span class="tag gap">${F().gaps(gapsN)}</span>` : ''}</div>
       </li>`;
     }).join('');
     ol.innerHTML = html + (current.length > 400 ? `<li class="empty">${lang === 'zh' ? '只显示前 400 个，用筛选缩小范围。' : 'Showing the first 400. Filter to narrow down.'}</li>` : '');
@@ -784,7 +838,7 @@
     refSel.value = key;
     if (save) safeSet('ref', key);
   }
-  function refChanged() { drawRings(); renderPlaces(); render(); if (state.sel) select(state.sel, false); }
+  function refChanged() { fillSort(); drawRings(); renderPlaces(); render(); if (state.sel) select(state.sel, false); }
   refSel.onchange = () => { setRef(refSel.value); refChanged(); };
 
   function renderPlaces() {
@@ -964,7 +1018,7 @@
   $('price').oninput = e => { state.price = Math.max(+e.target.value, state.priceMin + +e.target.step); e.target.value = state.price; render(); };
   $('dist').oninput = e => { state.dist = +e.target.value; render(); };
   $('term').onchange = e => { state.term = e.target.value; render(); };
-  $('sort').onchange = e => { state.sort = e.target.value; render(); };
+  $('sort').onchange = e => { state.sort = e.target.value; safeSet('sort', state.sort); render(); };
   const CHK = { 'f-priced': 'priced', 'f-heat': 'heat', 'f-allutil': 'allutil', 'f-net': 'net', 'f-cats': 'cats', 'f-dogs': 'dogs', 'f-inunit': 'inunit', 'f-parking': 'parking', 'f-furn': 'furn', 'f-ac': 'ac' };
   Object.entries(CHK).forEach(([id, k]) => { $(id).onchange = e => { state.checks[k] = e.target.checked; render(); }; });
   $('f-noshared').checked = state.noShared;
@@ -982,7 +1036,7 @@
     Object.assign(state, { q: '', beds: new Set(), price: state.basis === 'bed' ? 3000 : 12000, dist: 2, term: '', sort: 'dist', landlord: '', checks: {}, noShared: true });
     $('f-noshared').checked = true; safeSet('noshared', '1');
     $('q').value = ''; $('beds').querySelectorAll('button').forEach(b => b.classList.remove('on'));
-    setPriceRange(); $('dist').value = 2; $('term').value = ''; $('sort').value = 'dist'; llSel.value = '';
+    setPriceRange(); $('dist').value = 2; $('term').value = ''; $('sort').value = 'dist'; safeSet('sort', 'dist'); llSel.value = '';
     Object.keys(CHK).forEach(id => { $(id).checked = false; });
     render();
   };
@@ -1132,7 +1186,7 @@
 
   // ---------- language
   $('lang').onclick = () => {
-    lang = lang === 'zh' ? 'en' : 'zh'; safeSet('lang', lang); applyLang(); fillRef(); renderPlaces(); renderLegend(); render();
+    lang = lang === 'zh' ? 'en' : 'zh'; safeSet('lang', lang); applyLang(); fillRef(); fillSort(); renderPlaces(); renderLegend(); render();
     track('lang', { to: lang });
     if ($('view-gaps').classList.contains('active')) renderGaps();
     if ($('view-sources').classList.contains('active')) renderSources();
@@ -1142,6 +1196,8 @@
   applyLang();
   setRef(safeGet('ref') || 'Bascom Hall', false);
   fillRef();
+  state.sort = ({ rent: 'price' })[safeGet('sort')] || safeGet('sort') || 'dist';
+  fillSort();
   renderPlaces();
   renderLegend();
   drawRings();
