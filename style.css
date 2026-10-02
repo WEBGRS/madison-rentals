@@ -204,6 +204,9 @@ input[type=range] { width: 100%; accent-color: var(--lake); }
   box-shadow: 0 1px 4px rgba(0,0,0,.25); transform: translate(-50%, -50%); display: inline-block;
 }
 .price-tag.none { font-weight: 500; color: var(--ink-2); border-style: dashed; }
+/* Selected: whole tag inverts */
+.price-tag { cursor: pointer; transition: background-color .15s ease, color .15s ease; }
+.price-tag.sel { background: var(--ink); color: var(--paper); border-color: var(--ink); border-style: solid; box-shadow: 0 2px 8px rgba(0, 0, 0, .35); }
 .campus-pin { width: 16px; height: 16px; background: var(--badger); transform: rotate(45deg); border: 2px solid #fff; box-shadow: 0 0 0 1px var(--badger); }
 .ring-label { color: var(--badger); font-size: 11px; font-weight: 600; white-space: nowrap; text-shadow: 0 0 3px var(--card), 0 0 3px var(--card); }
 
@@ -450,13 +453,6 @@ textarea.draft { width: 100%; min-height: 260px; font: 13px/1.5 "Instrument Sans
 .dual input[type=range]:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--lake); outline-offset: 2px; }
 .dual input[type=range]:focus-visible::-moz-range-thumb { outline: 2px solid var(--lake); outline-offset: 2px; }
 
-/* Selected property: ring fades black -> white -> black so it shows on any background */
-.sel-ring {
-  position: absolute; left: 0; top: 0; width: 32px; height: 32px; margin: -16px 0 0 -16px; border-radius: 50%;
-  border: 3px solid #000; box-shadow: 0 0 0 1.5px #fff, inset 0 0 0 1.5px #fff; pointer-events: none;
-  animation: sel-flip 1.2s ease-in-out infinite alternate;
-}
-@keyframes sel-flip { to { border-color: #fff; box-shadow: 0 0 0 1.5px #000, inset 0 0 0 1.5px #000; } }
 
 /* Floor plan drawings */
 .fp-strip { display: flex; gap: 8px; overflow-x: auto; padding: 2px 12px 10px; }

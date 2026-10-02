@@ -126,18 +126,26 @@
   const ringLayer = L.layerGroup().addTo(map);
   const markerLayer = L.layerGroup().addTo(map);
   const tagLayer = L.layerGroup().addTo(map);
-  const selLayer = L.layerGroup().addTo(map);
   let refMarker = null;
 
   // Ring around the open property
+  // Selected property: its dot and price tag fill with the ink color (black in light theme, white in dark)
   function markSel() {
-    selLayer.clearLayers();
-    const p = state.sel && P.find(x => x.id === state.sel);
-    if (!p) return;
-    const m = markers.get(p.id);
-    if (m) m.bringToFront();
-    L.marker([p.lat, p.lng], { interactive: false, keyboard: false, icon: L.divIcon({ className: '', html: '<span class="sel-ring"></span>', iconSize: [0, 0] }) }).addTo(selLayer);
+    const ink = cssVar('ink'), paper = cssVar('paper');
+    markers.forEach((m, id) => {
+      if (id === state.sel) {
+        m.setStyle({ fillColor: ink, color: paper, fillOpacity: 1, weight: 2.5 });
+        m.setRadius(9);
+        m.bringToFront();
+      } else {
+        m.setStyle(m.baseStyle);
+        m.setRadius(6);
+      }
+    });
+    renderTags();
   }
+  // Clicking the open property again closes it
+  const toggleSel = id => { if (picking) return; if (state.sel === id) closeDrawer(); else select(id, false); };
 
   // ---------- bus stops (Madison Metro GTFS via scraper/transit.py)
   const TR = window.TRANSIT && window.TRANSIT.stops ? window.TRANSIT : null;
@@ -441,19 +449,17 @@
     current.forEach(p => {
       const b = pbucket(p);
       const col = cssVar(b);
-      const m = L.circleMarker([p.lat, p.lng], {
-        radius: state.sel === p.id ? 9 : 6, weight: b === 'p0' ? 2 : 1.5,
-        color: b === 'p0' ? col : (dark ? '#10161D' : '#fff'), fillColor: col, fillOpacity: b === 'p0' ? 0.15 : 0.95,
-      });
+      const baseStyle = { weight: b === 'p0' ? 2 : 1.5, color: b === 'p0' ? col : (dark ? '#10161D' : '#fff'), fillColor: col, fillOpacity: b === 'p0' ? 0.15 : 0.95 };
+      const m = L.circleMarker([p.lat, p.lng], { radius: 6, ...baseStyle });
+      m.baseStyle = baseStyle;
       const v = shownPrice(p), n = p._ls.length;
       const what = state.basis === 'bed' ? (zh ? '每人' : 'per person') : (zh ? '整套' : 'whole unit');
       m.bindTooltip(`<b>${esc(p.name || p.address)}</b><br>${v != null ? (zh ? `${what} ${money(v)} 起` : `From ${money(v)} ${what}`) : F().no_price}`
         + `<br><small>${zh ? `${n} 个户型符合筛选` : `${n} matching ${n === 1 ? 'unit or plan' : 'units or plans'}`}</small>`, { direction: 'top' });
-      m.on('click', () => { if (!picking) select(p.id, false); });
+      m.on('click', () => toggleSel(p.id));
       m.addTo(markerLayer);
       markers.set(p.id, m);
     });
-    renderTags();
     markSel();
   }
 
@@ -461,12 +467,15 @@
     tagLayer.clearLayers();
     if (map.getZoom() < 17) return;
     const bounds = map.getBounds();
-    current.filter(p => bounds.contains([p.lat, p.lng])).slice(0, 160).forEach(p => {
+    const inView = current.filter(p => bounds.contains([p.lat, p.lng]));
+    inView.sort((a, b) => (b.id === state.sel) - (a.id === state.sel));  // selected tag always drawn
+    inView.slice(0, 160).forEach(p => {
       const v = shownPrice(p) != null ? money(shownPrice(p)) : '?';
-      const b = pbucket(p);
+      const b = pbucket(p), on = p.id === state.sel;
       L.marker([p.lat, p.lng], {
-        icon: L.divIcon({ className: '', html: `<span class="price-tag${v === '?' ? ' none' : ''}" style="--c:var(--${b})">${v}</span>`, iconSize: [0, 0] }),
-      }).on('click', () => { if (!picking) select(p.id, false); }).addTo(tagLayer);
+        zIndexOffset: on ? 1000 : 0,
+        icon: L.divIcon({ className: '', html: `<span class="price-tag${v === '?' ? ' none' : ''}${on ? ' sel' : ''}" style="--c:var(--${b})">${v}</span>`, iconSize: [0, 0] }),
+      }).on('click', () => toggleSel(p.id)).addTo(tagLayer);
     });
   }
   map.on('zoomend moveend', renderTags);
@@ -715,7 +724,6 @@
     document.querySelectorAll('.res.sel').forEach(e => e.classList.remove('sel'));
     const li = document.querySelector(`.res[data-id="${CSS.escape(id)}"]`);
     if (li) { li.classList.add('sel'); if (!pan) li.scrollIntoView({ block: 'nearest' }); }
-    markers.forEach((m, k) => m.setRadius(k === id ? 9 : 6));
     markSel();
     drawPlaceLines(p);
     if (pan) map.panTo([p.lat, p.lng]);
@@ -740,7 +748,6 @@
     document.body.classList.remove('m-drawer');
     if (phone.matches && !document.body.classList.contains('m-list')) setTimeout(() => map.invalidateSize(), 0);
     state.sel = null;
-    markers.forEach(m => m.setRadius(6));
     markSel();
     lineLayer.clearLayers();
     document.querySelectorAll('.res.sel').forEach(e => e.classList.remove('sel'));
