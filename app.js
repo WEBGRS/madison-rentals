@@ -1,12 +1,32 @@
 /* Isthmus Rentals — map + filters + data-gap tracker */
-(() => {
-  const D = window.HOUSING;
-  if (!D) { document.body.innerHTML = '<p style="padding:24px">data/properties.js is missing. Run <code>python scraper/run_all.py</code> first.</p>'; return; }
-  const P = D.properties.filter(p => !p.hidden), META = D.meta;
+(async () => {
+  // ---------- data source: the full dataset on this machine (local server or file://), or the guarded API (public site)
+  const E = window.IsthmusEngine;
+  const CFG = window.ISTHMUS_CONFIG || {};
+  const LOCAL = window.HOUSING ? E.prepare(window.HOUSING, window.TRANSIT) : null;
+  const G = !LOCAL && CFG.api && window.WebgrsGuard ? WebgrsGuard.create({ api: CFG.api, sitekey: CFG.sitekey, site: 'rentals' }) : null;
+  if (!LOCAL && !G) { document.body.innerHTML = '<p style="padding:24px">No data: run <code>python scraper/run_all.py</code>, or point data/config.js at the API.</p>'; return; }
+  const DS = {
+    remote: !LOCAL,
+    meta: () => LOCAL ? Promise.resolve(E.metaOf(LOCAL)) : fetch(CFG.api.replace(/\/$/, '') + '/api/meta').then(r => { if (!r.ok) throw new Error('meta'); return r.json(); }),
+    search: q => LOCAL ? Promise.resolve(E.search(LOCAL, q)) : G.call('/api/search', { method: 'POST', body: q }),
+    property: (id, q) => LOCAL ? Promise.resolve(E.property(LOCAL, id, q)) : G.call('/api/property', { method: 'POST', body: { id, q } }),
+    peek: ids => LOCAL ? Promise.resolve({ rows: E.peek(LOCAL, ids) }) : G.call('/api/peek', { method: 'POST', body: { ids } }),
+    find: text => LOCAL ? Promise.resolve({ rows: E.find(LOCAL, text) }) : G.call('/api/find?q=' + encodeURIComponent(text)),
+    gaps: () => LOCAL ? Promise.resolve(E.gaps(LOCAL)) : G.call('/api/gaps'),
+    gapLandlord: ll => LOCAL ? Promise.resolve({ rows: E.gapLandlord(LOCAL, ll) }) : G.call('/api/gaps/landlord?ll=' + encodeURIComponent(ll)),
+  };
+  if (G) G.session().catch(() => { });  // the human check runs while the map draws
+  let M;
+  try { M = await DS.meta(); } catch (e) {
+    document.body.innerHTML = '<p style="padding:24px">The map could not load its data. Try again in a minute.</p>';
+    return;
+  }
+  const META = M.meta;
 
   // ---------- i18n
   const ZH = {
-    tagline: 'UW–Madison 周边租房', tab_map: '地图', tab_gaps: '缺失信息', tab_sources: '数据来源',
+    tab_map: '地图', tab_gaps: '缺失信息', tab_sources: '数据来源',
     search_ph: '街道、楼名或房东', bedrooms: '卧室数', studio: '单间', per_person: '每人', whole_unit: '整套',
     lease: '租期', term_any: '不限', term_2728: '2027 秋季（2027–28）',
     term_now: '现在 / 2026–27 和转租', term_unknown: '未说明', sort: '排序',
@@ -22,13 +42,11 @@
     place_save: '保存', place_cancel: '取消',
   };
   const ZHF = {
-    props: n => `<b>${n}</b> 个物业`, units: n => `<b>${n}</b> 个户型/单元`,
     dist_lbl: v => `距离 ≤ <b>${v} 英里</b>`, count: n => `${n} 个物业`,
     from: '起', per_person: '/人', per_unit: '/月', no_price: '未公开价格', walk: (m, mi, r) => `步行约 <b>${m} 分钟</b>（直线 ${mi} 英里）到 ${r}`,
     gaps: n => `${n} 项缺失`, not_stated: '未说明',
   };
   const ENF = {
-    props: n => `<b>${n}</b> properties`, units: n => `<b>${n}</b> units & floor plans`,
     dist_lbl: v => `Within <b>${v} mi</b> of`, count: n => `${n} ${n === 1 ? 'property' : 'properties'}`,
     from: 'from', per_person: '/person', per_unit: '/mo', no_price: 'No price posted',
     walk: (m, mi, r) => `About <b>${m} min</b> walk (${mi} mi straight line) to ${r}`,
@@ -68,10 +86,8 @@
   const priceBounds = () => (state.basis === 'bed' ? [500, 3000] : [800, 12000]);
   // Price a property shows: lowest among its listings that pass the filters, per person or whole unit
   const shownPrice = p => (state.basis === 'bed' ? p._minBed : p._minUnit);
-  const pbucket = p => {
-    const v = shownPrice(p);
-    return v == null ? 'p0' : (state.basis === 'bed' ? BUCKETS : BUCKETS_UNIT).find(b => v >= b[0] && v < b[1])[2];
-  };
+  const priceBucket = v => v == null ? 'p0' : (state.basis === 'bed' ? BUCKETS : BUCKETS_UNIT).find(b => v >= b[0] && v < b[1])[2];
+  const pbucket = p => priceBucket(shownPrice(p));
   const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue('--' + n).trim();
 
   // ---------- state
@@ -83,9 +99,7 @@
 
   // ---------- map
   // Open on where the listings are (median of those within a mile), wider on phones
-  const near = P.filter(p => p.dist <= 1 && p.lat);
-  const med = a => a.slice().sort((x, y) => x - y)[a.length >> 1];
-  const home = near.length ? [med(near.map(p => p.lat)), med(near.map(p => p.lng))] : LM['Bascom Hall'];
+  const home = M.home || LM['Bascom Hall'];
   const map = L.map('map', { zoomControl: true, preferCanvas: true }).setView(home, matchMedia('(max-width: 860px)').matches ? 14 : 15);
   let dark = window.IsthmusTheme ? IsthmusTheme.isDark() : false;
   const basemap = () => (window.IsthmusTheme ? IsthmusTheme.basemap() : 'color');
@@ -209,108 +223,30 @@
       .bindTooltip(state.ref).addTo(map);
   }
 
-  // ---------- derived per property
-  P.forEach(p => {
-    p._text = [p.name, p.address, p.landlord, p.zip].filter(Boolean).join(' ').toLowerCase();
-    const u = (p.utilities || []);
-    p._heat = u.includes('heat');
-    p._net = u.includes('internet');
-    p._allutil = ['heat', 'electric', 'water'].every(x => u.includes(x));
-    const pets = (p.pets || '').toLowerCase();
-    p._cats = /cat/.test(pets) && !/cats not allowed|no pets/.test(pets);
-    p._dogs = /dog/.test(pets) && !/dogs not allowed|no pets/.test(pets);
-    p._inunit = /in[ -]?unit|washer & dryer|washer and dryer/i.test(p.laundry || '');
-    p._parking = !!p.parking && !/^street\b|no parking|none/i.test(p.parking);
-    p._furn = p.furnished === true;
-    p._ac = p.ac === true;
-  });
-
-  function listingMatches(x) {
-    if (state.noShared && x.shared) return false;
-    if (state.beds.size) {
-      const b = x.beds;
-      if (b == null) return false;
-      const k = b >= 5 ? 5 : Math.floor(b);
-      if (!state.beds.has(k)) return false;
-    }
-    if (state.term) {
-      if (state.term === 'unknown') { if (x.term) return false; }
-      else if (x.term !== state.term) return false;
-    }
-    const [floor, cap] = priceBounds();
-    if (state.price < cap || state.priceMin > floor) {
-      const v = state.basis === 'bed' ? x.per_bed : unitRent(x);
-      if (v == null || (state.price < cap && v > state.price) || (state.priceMin > floor && v < state.priceMin)) return false;
-    }
-    if (state.checks.priced && !x.rent) return false;
-    return true;
+  // ---------- the query the engine runs (here or behind the API)
+  function queryParams(extra) {
+    return {
+      text: state.q, beds: [...state.beds], basis: state.basis, price: state.price, priceMin: state.priceMin, dist: state.dist,
+      ref: state.refPt, refName: state.refKey.startsWith('place:') ? 'my place' : state.refKey, term: state.term, sort: state.sort,
+      landlord: state.landlord, checks: state.checks, noShared: state.noShared, places: places.map(p => [p.lat, p.lng]), ...extra,
+    };
   }
-
-  function filtered() {
-    const q = state.q.trim().toLowerCase();
-    const c = state.checks;
-    const out = [];
-    for (const p of P) {
-      p._d = miles(state.refPt, [p.lat, p.lng]);
-      if (state.dist < 2 && p._d > state.dist) continue;
-      if (q && !p._text.includes(q)) continue;
-      if (state.landlord && p.landlord !== state.landlord) continue;
-      if (c.heat && !p._heat) continue;
-      if (c.net && !p._net) continue;
-      if (c.allutil && !p._allutil) continue;
-      if (c.cats && !p._cats) continue;
-      if (c.dogs && !p._dogs) continue;
-      if (c.inunit && !p._inunit) continue;
-      if (c.parking && !p._parking) continue;
-      if (c.furn && !p._furn) continue;
-      if (c.ac && !p._ac) continue;
-      const ls = p.listings.filter(listingMatches);
-      if (!ls.length) continue;
-      const pb = ls.map(x => x.per_bed).filter(v => v != null);
-      const rents = ls.map(x => x.rent).filter(v => v != null);
-      p._ls = ls;
-      p._minBed = pb.length ? Math.min(...pb) : null;
-      p._minBedDiv = p._minBed != null && ls.every(x => x.per_bed !== p._minBed || x.pb_div);
-      p._minBedUnv = p._minBed != null && ls.some(x => x.per_bed === p._minBed && x.bv && ['none', 'range-out'].includes(x.bv[0]));
-      p._minRent = rents.length ? Math.min(...rents) : null;
-      const units = ls.map(unitRent).filter(v => v != null);
-      p._minUnit = units.length ? Math.min(...units) : null;
-      const sq = ls.map(x => x.sqft).filter(v => v >= 150);
-      p._maxSqft = sq.length ? Math.max(...sq) : null;
-      const psf = ls.filter(x => x.sqft >= 150 && unitRent(x) != null).map(x => unitRent(x) / x.sqft);
-      p._ppsf = psf.length ? Math.min(...psf) : null;
-      // Earliest move-in; 'now' and dates already past count as today
-      const today = todayISO();
-      const moves = ls.map(x => x.avail === 'now' ? today : /^\d{4}-\d{2}-\d{2}$/.test(x.avail || '') ? (x.avail < today ? today : x.avail) : null).filter(Boolean).sort();
-      p._moveIn = moves[0] || null;
-      out.push(p);
-    }
-    // Properties without the sorted value go last; ties fall back to distance
-    const S = SORTS[state.sort] || SORTS.dist, dir = S.dir || 1;
-    const val = new Map(out.map(p => [p, S.val(p)]));
-    out.sort((a, b) => {
-      const va = val.get(a), vb = val.get(b);
-      if (va == null || vb == null) return (va == null) - (vb == null) || a._d - b._d;
-      return dir * (va < vb ? -1 : va > vb ? 1 : 0) || a._d - b._d;
-    });
-    return out;
+  // Message for a refused request (daily quota, too fast, blocked)
+  function apiErrText(e) {
+    const zh = lang === 'zh', k = e && e.data && e.data.error;
+    if (k === 'quota') return zh ? '今天能查看的数量用完了。为防止数据被批量复制，每个访客每天有上限，明天会恢复。' : "You have reached today's limit. To stop bulk copying, each visitor can look at a limited number per day; it resets tomorrow.";
+    if (k === 'slow') return zh ? '操作太快了，等几秒再试。' : 'Too many requests at once. Wait a few seconds and try again.';
+    if (k === 'blocked') return zh ? '这个浏览器的访问已被停止。如果你只是正常使用，请联系网站作者。' : 'Access from this browser has been stopped. If that is a mistake, contact the site author.';
+    return zh ? '数据暂时取不到，稍后再试。' : 'The data could not be loaded. Try again shortly.';
   }
 
   // ---------- sort orders
   const todayISO = () => new Date().toISOString().slice(0, 10);
-  const gapCount = p => (p.gaps || []).filter(g => !/not listed|rent basis/.test(g)).length;
-  // Walking distance to the closest bus stop, computed once per property
-  const busDist = p => {
-    if (!TR) return null;
-    if (p._busD === undefined) p._busD = Math.min(...TR.stops.map(([la, ln]) => miles([p.lat, p.lng], [la, ln])));
-    return p._busD;
-  };
-  const placesAvg = p => places.length ? places.reduce((t, pl) => t + miles([p.lat, p.lng], [pl.lat, pl.lng]), 0) / places.length : null;
   const SORTS = {
     dist: { g: 'd', zh: '距离最近', en: 'Closest', val: p => p._d },
-    bus: { g: 'd', zh: '离公交站最近', en: 'Nearest bus stop', val: busDist,
+    bus: { g: 'd', zh: '离公交站最近', en: 'Nearest bus stop', val: r => r._busD,
       chip: v => lang === 'zh' ? `步行 ${Math.max(1, walkMin(v))} 分钟到公交站` : `${Math.max(1, walkMin(v))} min walk to a bus stop` },
-    places: { g: 'd', zh: '离常去地点最近', en: 'Closest to my places', val: placesAvg,
+    places: { g: 'd', zh: '离常去地点最近', en: 'Closest to my places', val: r => r._placesAvg,
       chip: v => lang === 'zh' ? `到常去地点平均 ${mi2(v)}` : `${mi2(v)} to my places on average` },
     price: { g: 'p', zh: '价格从低到高', en: 'Price: low to high', val: p => shownPrice(p) },
     price_desc: { g: 'p', zh: '价格从高到低', en: 'Price: high to low', val: p => shownPrice(p), dir: -1 },
@@ -320,14 +256,14 @@
       chip: v => lang === 'zh' ? `最大 ${v.toLocaleString()} ft²` : `Up to ${v.toLocaleString()} ft²` },
     movein: { g: 'u', zh: '最早能入住', en: 'Earliest move-in', val: p => p._moveIn,
       chip: v => v <= todayISO() ? (lang === 'zh' ? '现在就能入住' : 'Move in now') : (lang === 'zh' ? `${dateLabel(v)} 起可入住` : `Move in from ${dateLabel(v)}`) },
-    choice: { g: 'u', zh: '可选户型最多', en: 'Most units to choose from', val: p => p._ls.length, dir: -1,
+    choice: { g: 'u', zh: '可选户型最多', en: 'Most units to choose from', val: r => r._n, dir: -1,
       chip: v => lang === 'zh' ? `${v} 个户型可选` : `${v} to choose from` },
-    complete: { g: 'u', zh: '缺失信息最少', en: 'Fewest missing details', val: gapCount },
+    complete: { g: 'u', zh: '缺失信息最少', en: 'Fewest missing details', val: r => r._gapsN },
   };
   const SORT_GROUPS = [['d', '距离', 'Distance'], ['p', '价格', 'Price'], ['u', '房源', 'Rentals']];
   function fillSort() {
     const zh = lang === 'zh';
-    const off = k => (k === 'places' && !places.length) || (k === 'bus' && !TR);
+    const off = k => (k === 'places' && !places.length) || (k === 'bus' && !M.hasBus);
     if (!SORTS[state.sort] || off(state.sort)) state.sort = 'dist';
     $('sort').innerHTML = SORT_GROUPS.map(([g, gz, ge]) => `<optgroup label="${zh ? gz : ge}">` + Object.entries(SORTS).filter(([, s]) => s.g === g).map(([k, s]) =>
       `<option value="${k}"${off(k) ? ' disabled' : ''}>${zh ? s.zh : s.en}${k === 'places' && off(k) ? (zh ? '（先添加地点）' : ' (add a place first)') : ''}</option>`).join('') + '</optgroup>').join('');
@@ -340,56 +276,17 @@
     return v == null ? '' : `<span class="tag metric">${esc(S.chip(v))}</span>`;
   }
 
-  // ---------- anonymous usage events (public build only; #notrack opts this browser out)
-  const TRACK = META.track;
+  // ---------- page actions worth counting; the API already logs every search and every property opened
   if (/notrack/.test(location.hash)) safeSet('notrack', '1');
-  const tracking = !!TRACK && !safeGet('notrack') && location.protocol === 'https:';
-  const rid = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => (b % 36).toString(36)).join('');
-  let vid = safeGet('vid');
-  if (!vid) { vid = rid(8); safeSet('vid', vid); }
-  const sid = rid(6);
-  const mobile = matchMedia('(max-width: 860px)').matches ? 1 : 0;
   function track(e, extra = {}) {
-    if (!tracking) return;
-    const body = JSON.stringify({ v: 1, e, vid, sid, m: mobile, l: lang, ...extra });
-    try { fetch(`https://ntfy.sh/${TRACK}`, { method: 'POST', body, keepalive: true }).catch(() => { }); } catch { /* offline */ }
-  }
-  let lastSnap = null, snapTimer = null;
-  function filterSnapshot() {
-    const s = {};
-    if (state.q.trim()) s.q = state.q.trim().slice(0, 60);
-    if (state.beds.size) s.beds = [...state.beds].sort();
-    if (state.basis !== 'bed') s.basis = state.basis;
-    if (state.price < priceBounds()[1]) s.price = state.price;
-    if (state.priceMin > priceBounds()[0]) s.priceMin = state.priceMin;
-    if (state.dist < 2) s.dist = state.dist;
-    if (state.refKey !== 'Bascom Hall') s.ref = state.refKey.startsWith('place:') ? 'my place' : state.refKey;
-    if (state.term) s.term = state.term;
-    if (state.sort !== 'dist') s.sort = state.sort;
-    if (state.landlord) s.landlord = state.landlord;
-    if (!state.noShared) s.shared = 1;
-    const c = Object.keys(state.checks).filter(k => state.checks[k]);
-    if (c.length) s.checks = c;
-    return s;
-  }
-  function trackFilters() {
-    if (!tracking) return;
-    if (lastSnap === null) { lastSnap = JSON.stringify(filterSnapshot()); return; }
-    clearTimeout(snapTimer);
-    snapTimer = setTimeout(() => {
-      const s = filterSnapshot(), j = JSON.stringify(s);
-      if (j !== lastSnap && Object.keys(s).length) track('filter', { f: s, n: current.length });
-      lastSnap = j;
-    }, 2500);
+    if (!DS.remote || safeGet('notrack')) return;
+    G.call('/api/event', { method: 'POST', body: { e, ...extra } }).catch(() => { });
   }
 
   // ---------- render
-  let current = [];
-  const markers = new Map();
+  let current = [], total = 0, markerRows = [], searchErr = null, seq = 0, timer = null, searched = false;
+  const markers = new Map(), names = new Map();
   function render() {
-    current = filtered();
-    trackFilters();
-    $('count').textContent = F().count(current.length);
     const [pf, pc] = priceBounds();
     const noCap = state.price >= pc && state.priceMin <= pf;
     $('price-lbl').innerHTML = priceLabel();
@@ -401,7 +298,35 @@
     $('more-n').textContent = nMore ? ` (${nMore})` : '';
     const nAll = nMore + (noCap ? 0 : 1) + (state.dist < 2 ? 1 : 0) + (state.term ? 1 : 0) + (state.noShared ? 0 : 1);
     $('ftoggle-n').textContent = nAll ? ` (${nAll})` : '';
+    clearTimeout(timer);
+    timer = setTimeout(runSearch, DS.remote ? 200 : 0);
+  }
+  async function runSearch() {
+    const my = ++seq;
+    try {
+      const r = await DS.search(queryParams({ offset: 0 }));
+      if (my !== seq) return;
+      searchErr = null; current = r.rows; total = r.total; markerRows = r.markers;
+    } catch (e) {
+      if (my !== seq) return;
+      searchErr = e; current = []; total = 0; markerRows = [];
+    }
+    searched = true;
+    current.forEach(p => names.set(p.id, p.name || p.address));
+    $('count').textContent = F().count(total);
+    renderList();
+    renderMarkers();
     setViewSwitch();
+  }
+  async function loadMore() {
+    const my = seq;
+    try {
+      const r = await DS.search(queryParams({ offset: current.length }));
+      if (my !== seq) return;
+      r.rows.forEach(p => names.set(p.id, p.name || p.address));
+      current = current.concat(r.rows);
+    } catch (e) { searchErr = e; }
+    renderList();
   }
 
   // ---------- phone layout: map or list, one at a time
@@ -409,7 +334,7 @@
   function setViewSwitch() {
     const zh = lang === 'zh';
     const listMode = document.body.classList.contains('m-list');
-    $('viewswitch').textContent = listMode ? (zh ? '看地图' : 'Show map') : (zh ? `看列表 · ${current.length}` : `Show list · ${current.length}`);
+    $('viewswitch').textContent = listMode ? (zh ? '看地图' : 'Show map') : (zh ? `看列表 · ${total}` : `Show list · ${total}`);
   }
   // Phone: price, distance and the rest fold under one button
   $('ftoggle').onclick = () => {
@@ -466,53 +391,60 @@
   }
   const distLabel = mi => lang === 'zh' ? `${mi.toFixed(2)} 英里 · 步行 ${walkMin(mi)} 分钟` : `${mi.toFixed(2)} mi · ${walkMin(mi)} min walk`;
 
-  function bedsSummary(ls) {
-    const s = [...new Set(ls.map(x => x.beds).filter(b => b != null))].sort((a, b) => a - b);
-    if (!s.length) return '';
+  const bedsOf = ls => [...new Set(ls.map(x => x.beds).filter(b => b != null))].sort((a, b) => a - b);
+  function bedsSummary(s) {
+    if (!s || !s.length) return '';
     const f = b => b === 0 ? (lang === 'zh' ? '单间' : 'Studio') : `${b}${lang === 'zh' ? ' 卧' : ' BR'}`;
     return s.length > 3 ? `${f(s[0])}–${f(s[s.length - 1])}` : s.map(f).join(', ');
   }
 
   function renderList() {
     const ol = $('results');
+    if (!searched) { ol.innerHTML = `<li class="empty">${lang === 'zh' ? '加载中…' : 'Loading…'}</li>`; return; }
     if (!current.length) {
-      ol.innerHTML = `<li class="empty">${lang === 'zh' ? '没有符合条件的物业。放宽价格或距离，或点“重置”。' : 'Nothing matches. Widen the price or distance, or press Reset.'}</li>`;
+      ol.innerHTML = `<li class="empty">${searchErr ? esc(apiErrText(searchErr)) : lang === 'zh' ? '没有符合条件的物业。放宽价格或距离，或点“重置”。' : 'Nothing matches. Widen the price or distance, or press Reset.'}</li>`;
       return;
     }
-    const html = current.slice(0, 400).map(p => {
+    const html = current.map(p => {
       const title = p.name || p.address || '—';
       const sub = (p.name && p.address ? `<span>${esc(p.address)}</span>` : '')
         + `<span>${p.landlord ? esc(p.landlord) + ' · ' : ''}<span class="nw">${distLabel(p._d)}</span></span>`
         + placeDistLine(p);
-      const has2728 = p._ls.some(x => x.term === '2027-28');
-      const gapsN = (p.gaps || []).filter(g => !/not listed|rent basis/.test(g)).length;
+      const has2728 = p._2728, gapsN = p._gapsN;
       return `<li class="res${state.sel === p.id ? ' sel' : ''}" data-id="${esc(p.id)}" tabindex="0">
         <span class="dot ${pbucket(p)}" style="${shownPrice(p) != null ? `background:var(--${pbucket(p)})` : ''}"></span>
         <h3>${esc(title)}</h3>${priceHTML(p)}
         <div class="sub">${sub}</div>
-        <div class="tags">${sortChip(p)}${bedsSummary(p._ls) ? `<span class="tag">${esc(bedsSummary(p._ls))}</span>` : ''}${has2728 ? '<span class="tag t2728">2027–28</span>' : ''}${(p.stale || []).some(s => /last updated|already passed|update date unknown|site not updated/i.test(s)) ? `<span class="tag gap">${lang === 'zh' ? '可能过期' : 'May be outdated'}</span>` : ''}${p._ls.some(x => x.bv && ['none', 'range-out'].includes(x.bv[0])) ? `<span class="tag gap">${lang === 'zh' ? '计价未核实' : 'Price basis unconfirmed'}</span>` : ''}${gapsN ? `<span class="tag gap">${F().gaps(gapsN)}</span>` : ''}</div>
+        <div class="tags">${sortChip(p)}${bedsSummary(p._beds) ? `<span class="tag">${esc(bedsSummary(p._beds))}</span>` : ''}${has2728 ? '<span class="tag t2728">2027–28</span>' : ''}${p._stale ? `<span class="tag gap">${lang === 'zh' ? '可能过期' : 'May be outdated'}</span>` : ''}${p._unv ? `<span class="tag gap">${lang === 'zh' ? '计价未核实' : 'Price basis unconfirmed'}</span>` : ''}${gapsN ? `<span class="tag gap">${F().gaps(gapsN)}</span>` : ''}</div>
       </li>`;
     }).join('');
-    ol.innerHTML = html + (current.length > 400 ? `<li class="empty">${lang === 'zh' ? '只显示前 400 个，用筛选缩小范围。' : 'Showing the first 400. Filter to narrow down.'}</li>` : '');
+    const more = current.length < total
+      ? `<li class="empty"><button class="btn ghost" id="more-res" type="button">${lang === 'zh' ? `再显示 ${Math.min(60, total - current.length)} 个（共 ${total} 个）` : `Show ${Math.min(60, total - current.length)} more (of ${total})`}</button></li>` : '';
+    ol.innerHTML = html + (searchErr ? `<li class="empty">${esc(apiErrText(searchErr))}</li>` : more);
+    if ($('more-res')) $('more-res').onclick = e => { e.stopPropagation(); e.target.disabled = true; loadMore(); };
   }
 
   function renderMarkers() {
     markerLayer.clearLayers();
     markers.clear();
-    const zh = lang === 'zh';
-    current.forEach(p => {
-      const b = pbucket(p);
+    markerRows.forEach(([id, lat, lng, v, n]) => {
+      const b = priceBucket(v);
       const col = cssVar(b);
       const baseStyle = { weight: b === 'p0' ? 2 : 1.5, color: b === 'p0' ? col : (dark ? '#10161D' : '#fff'), fillColor: col, fillOpacity: b === 'p0' ? 0.15 : 0.95 };
-      const m = L.circleMarker([p.lat, p.lng], { radius: 6, ...baseStyle });
+      const m = L.circleMarker([lat, lng], { radius: 6, ...baseStyle });
       m.baseStyle = baseStyle;
-      const v = shownPrice(p), n = p._ls.length;
-      const what = state.basis === 'bed' ? (zh ? '每人' : 'per person') : (zh ? '整套' : 'whole unit');
-      m.bindTooltip(`<b>${esc(p.name || p.address)}</b><br>${v != null ? (zh ? `${what} ${money(v)} 起` : `From ${money(v)} ${what}`) : F().no_price}`
-        + `<br><small>${zh ? `${n} 个户型符合筛选` : `${n} matching ${n === 1 ? 'unit or plan' : 'units or plans'}`}</small>`, { direction: 'top' });
-      m.on('click', () => toggleSel(p.id));
+      const tip = () => {
+        const zh = lang === 'zh', what = state.basis === 'bed' ? (zh ? '每人' : 'per person') : (zh ? '整套' : 'whole unit');
+        return `<b>${esc(names.get(id) || '…')}</b><br>${v != null ? (zh ? `${what} ${money(v)} 起` : `From ${money(v)} ${what}`) : F().no_price}`
+          + `<br><small>${zh ? `${n} 个户型符合筛选` : `${n} matching ${n === 1 ? 'unit or plan' : 'units or plans'}`}</small>`;
+      };
+      m.bindTooltip(tip, { direction: 'top' });
+      m.on('tooltipopen', () => {
+        if (!names.has(id)) DS.peek([id]).then(r => { r.rows.forEach(([i, nm]) => names.set(i, nm)); m.setTooltipContent(tip()); }).catch(() => { });
+      });
+      m.on('click', () => toggleSel(id));
       m.addTo(markerLayer);
-      markers.set(p.id, m);
+      markers.set(id, m);
     });
     markSel();
   }
@@ -521,15 +453,15 @@
     tagLayer.clearLayers();
     if (map.getZoom() < 17) return;
     const bounds = map.getBounds();
-    const inView = current.filter(p => bounds.contains([p.lat, p.lng]));
-    inView.sort((a, b) => (b.id === state.sel) - (a.id === state.sel));  // selected tag always drawn
-    inView.slice(0, 160).forEach(p => {
-      const v = shownPrice(p) != null ? money(shownPrice(p)) : '?';
-      const b = pbucket(p), on = p.id === state.sel;
-      L.marker([p.lat, p.lng], {
+    const inView = markerRows.filter(r => bounds.contains([r[1], r[2]]));
+    inView.sort((a, b) => (b[0] === state.sel) - (a[0] === state.sel));  // selected tag always drawn
+    inView.slice(0, 160).forEach(([id, lat, lng, price]) => {
+      const v = price != null ? money(price) : '?';
+      const b = priceBucket(price), on = id === state.sel;
+      L.marker([lat, lng], {
         zIndexOffset: on ? 1000 : 0,
         icon: L.divIcon({ className: '', html: `<span class="price-tag${v === '?' ? ' none' : ''}${on ? ' sel' : ''}" style="--c:var(--${b})">${v}</span>`, iconSize: [0, 0] }),
-      }).on('click', () => toggleSel(p.id)).addTo(tagLayer);
+      }).on('click', () => toggleSel(id)).addTo(tagLayer);
     });
   }
   map.on('zoomend moveend', renderTags);
@@ -661,15 +593,25 @@
     return hit ? s.replace(hit[0], hit[1]) : s;
   }
 
-  const opened = new Set();
-  function select(id, pan = true) {
+  let selSeq = 0;
+  function drawerError(e) {
+    const dr = $('drawer');
+    dr.innerHTML = `<div class="dhead"><h2>${esc(names.get(state.sel) || '')}</h2><button class="close" aria-label="Close">×</button></div><div class="issues"><p>${esc(apiErrText(e))}</p></div>`;
+    dr.hidden = false;
+    document.body.classList.add('m-drawer');
+    dr.querySelector('.close').onclick = closeDrawer;
+  }
+  async function select(id, pan = true, zoom = 0) {
     state.sel = id;
-    const p = P.find(x => x.id === id);
-    if (!p) return;
-    if (!opened.has(id)) { opened.add(id); track('open', { p: id, d: Math.round(p.dist * 100) / 100 }); }
+    const my = ++selSeq;
+    let r;
+    try { r = await DS.property(id, queryParams()); } catch (e) { if (my === selSeq && state.sel === id) drawerError(e); return; }
+    if (my !== selSeq || state.sel !== id || !r) return;
+    const p = r.p;
+    names.set(p.id, p.name || p.address);
     const d = miles(state.refPt, [p.lat, p.lng]);
     const zh = lang === 'zh';
-    const ls = p._ls && current.includes(p) ? p._ls : p.listings.filter(x => !(state.noShared && x.shared));
+    const ls = r.match.map(i => p.listings[i]);
     const hiddenShared = state.noShared ? p.listings.filter(x => x.shared).length : 0;
     // Marketing headlines repeated on most units ("In the Center of It All") add nothing per row
     const planN = {};
@@ -721,7 +663,7 @@
     }).join('');
     const unitMode = state.basis === 'unit';
     const ppAll = range(ls.map(unitMode ? unitRent : x => x.per_bed));
-    const bedsAll = bedsSummary(ls);
+    const bedsAll = bedsSummary(bedsOf(ls));
     const terms = [...new Set(ls.map(x => x.term).filter(Boolean))].filter(t => t !== 'past date').slice(0, 2);
     const overview = [ppAll ? (zh ? `${unitMode ? '整套' : '每人'} ${ppAll}` : `${ppAll} ${unitMode ? 'whole unit' : 'per person'}`) : '', bedsAll, zh ? `${ls.length} 个户型` : `${ls.length} listed`, ...terms.map(termLabel)]
       .filter(Boolean).map(s => `<span>${esc(s)}</span>`).join('');
@@ -780,7 +722,8 @@
     if (li) { li.classList.add('sel'); if (!pan) li.scrollIntoView({ block: 'nearest' }); }
     markSel();
     drawPlaceLines(p);
-    if (pan) map.panTo([p.lat, p.lng]);
+    if (zoom) map.setView([p.lat, p.lng], zoom);
+    else if (pan) map.panTo([p.lat, p.lng]);
   }
   // Floor plan drawings open full size
   function openLightbox(src, cap) {
@@ -853,7 +796,7 @@
     });
     $('place-chips').innerHTML = places.length
       ? places.map(pl => `<span class="pchip${state.refKey === 'place:' + pl.id ? ' on' : ''}" data-id="${esc(pl.id)}"><button type="button" class="pc-name" title="${zh ? '从这里算距离' : 'Measure distances from here'}">${esc(pl.name)}</button><button type="button" class="pc-x" aria-label="${zh ? '删除' : 'Remove'} ${esc(pl.name)}">×</button></span>`).join('')
-      : `<span class="place-hint">${zh ? '加上实验室、健身房或打工的地方，就能看到每套房到那里的直线距离。' : 'Add your lab, gym or job to see how far each rental is from it.'}</span>`;
+      : '';
   }
   $('place-chips').onclick = e => {
     const chip = e.target.closest('.pchip');
@@ -971,9 +914,11 @@
     resetPending();
     placeMsg(zh ? '搜索中…' : 'Searching…');
     // Campus landmarks and rentals on this map first, then OpenStreetMap
+    let found = [];
+    try { found = (await DS.find(ql)).rows.slice(0, 3); } catch { /* quota or offline: landmarks and OpenStreetMap still work */ }
     const local = [
       ...Object.entries(LM).filter(([k]) => k.toLowerCase().includes(ql)).map(([k, v]) => ({ name: k, sub: zh ? '校园地标' : 'Campus landmark', lat: v[0], lng: v[1] })),
-      ...P.filter(p => p._text.includes(ql)).slice(0, 3).map(p => ({ name: p.name || p.address, sub: p.name ? p.address : '', lat: p.lat, lng: p.lng })),
+      ...found.map(p => ({ name: p.name, sub: p.sub, lat: p.lat, lng: p.lng })),
     ];
     let remote = [];
     try {
@@ -1028,9 +973,7 @@
     if (state.sel) select(state.sel, false);
   };
   const llSel = $('landlord');
-  const llCount = {};
-  P.forEach(p => { if (p.landlord) llCount[p.landlord] = (llCount[p.landlord] || 0) + 1; });
-  Object.entries(llCount).sort((a, b) => b[1] - a[1]).forEach(([n, c]) => llSel.add(new Option(`${n} (${c})`, n)));
+  M.landlords.forEach(([n, c]) => llSel.add(new Option(`${n} (${c})`, n)));
   llSel.onchange = e => { state.landlord = e.target.value; render(); };
   $('reset').onclick = () => {
     Object.assign(state, { q: '', beds: new Set(), price: state.basis === 'bed' ? 3000 : 12000, dist: 2, term: '', sort: 'dist', landlord: '', checks: {}, noShared: true });
@@ -1043,15 +986,22 @@
   $('results').onclick = e => { const li = e.target.closest('.res'); if (li) select(li.dataset.id); };
   $('results').onkeydown = e => { if (e.key === 'Enter') { const li = e.target.closest('.res'); if (li) select(li.dataset.id); } };
 
+  // Spreadsheet export only where the full data is on this machine; the public site has no bulk download
+  if (DS.remote) $('export').hidden = true;
   $('export').onclick = () => {
+    if (!LOCAL) return;
     const cols = ['landlord', 'name', 'address', 'unit', 'plan', 'beds', 'baths', 'sqft', 'rent', 'rent_max', 'basis', 'per_bed', 'avail', 'term', 'status', 'dist_mi', 'utilities', 'pets', 'parking', 'laundry', 'phone', 'email', 'source_url'];
     const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const rows = [cols.join(',')];
-    current.forEach(p => p._ls.forEach(x => rows.push([p.landlord, p.name, p.address, x.unit, x.plan, x.beds, x.baths, x.sqft, x.rent, x.rent_max, x.basis, x.per_bed, x.avail, x.term, x.status, p._d.toFixed(2), (p.utilities || []).join(' '), p.pets, p.parking, p.laundry, p.phone, p.email, x.url].map(q).join(','))));
+    const all = E.search(LOCAL, queryParams(), { all: true }).rows;
+    all.forEach(r => {
+      const { p, match } = E.property(LOCAL, r.id, queryParams());
+      match.forEach(i => { const x = p.listings[i]; rows.push([p.landlord, p.name, p.address, x.unit, x.plan, x.beds, x.baths, x.sqft, x.rent, x.rent_max, x.basis, x.per_bed, x.avail, x.term, x.status, r._d.toFixed(2), (p.utilities || []).join(' '), p.pets, p.parking, p.laundry, p.phone, p.email, x.url].map(q).join(',')); });
+    });
     const blob = new Blob(['﻿' + rows.join('\n')], { type: 'text/csv' });
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'madison-rentals.csv' });
     a.click(); URL.revokeObjectURL(a.href);
-    track('csv', { n: current.length });
+    track('csv', { n: all.length });
   };
 
   // ---------- legend + header stats
@@ -1071,8 +1021,6 @@
       (TR ? `<label class="row lg-bus"><input type="checkbox" id="lg-bus"${showBus ? ' checked' : ''}><span class="bus-stop sm">${BUS_SVG}</span>${zh ? '公交站（放大后显示）' : 'Bus stops (zoom in to see)'}</label>` : '') + '</div>';
     $('legend').querySelector('.lg-head').onclick = () => { safeSet('legend', $('legend').classList.contains('closed') ? '1' : '0'); renderLegend(); };
     if ($('lg-bus')) $('lg-bus').onchange = e => { showBus = e.target.checked; safeSet('bus', showBus ? '1' : '0'); syncBus(); };
-    $('stat-props').innerHTML = F().props(META.properties);
-    $('stat-units').innerHTML = F().units(META.listings);
   }
 
   // ---------- tabs
@@ -1102,16 +1050,15 @@
     'contact info': ['(No phone or email found — find a contact first.)', '（没找到电话或邮箱，先找联系方式）'],
     'rent basis (per person or whole unit)': ['Is the listed rent for the whole unit or per person?', '标价是整套的还是每人的？'],
   };
-  const byLL = {};
-  P.forEach(p => { if (p.gaps || p.conflicts || p.stale) (byLL[p.landlord || '(landlord unknown)'] ||= []).push(p); });
-  let gapSel = null;
-  function renderGaps() {
+  let gapSel = null, gapLls = null;
+  const gapCache = new Map();
+  async function renderGaps() {
     const zh = lang === 'zh';
-    const tot = {};
-    P.forEach(p => (p.gaps || []).forEach(g => { tot[g] = (tot[g] || 0) + 1; }));
-    $('gap-summary').innerHTML = `<table class="sumtbl">${Object.entries(tot).sort((a, b) => b[1] - a[1]).map(([g, n]) => `<tr><td>${esc(zh ? (QUESTIONS[g] || [g, g])[1].replace(/？.*$/, '') : g)}</td><td>${n}</td></tr>`).join('')}</table>`;
-    const lls = Object.entries(byLL).sort((a, b) => b[1].length - a[1].length);
-    $('gap-landlords').innerHTML = lls.map(([ll, ps]) => `<li data-ll="${esc(ll)}" class="${ll === gapSel ? 'sel' : ''}"><span>${esc(ll)} ${safeGet('emailed:' + ll) ? `<span class="done">${zh ? '已发' : 'emailed'}</span>` : ''}</span><span>${ps.length}</span></li>`).join('');
+    if (!gapLls) {
+      try { gapLls = (await DS.gaps()).landlords; } catch (e) { $('gap-landlords').innerHTML = `<li>${esc(apiErrText(e))}</li>`; return; }
+    }
+    const lls = gapLls;
+    $('gap-landlords').innerHTML = lls.map(([ll, n]) => `<li data-ll="${esc(ll)}" class="${ll === gapSel ? 'sel' : ''}"><span>${esc(ll)} ${safeGet('emailed:' + ll) ? `<span class="done">${zh ? '已发' : 'emailed'}</span>` : ''}</span><span>${n}</span></li>`).join('');
     $('gap-landlords').onclick = e => { const li = e.target.closest('li'); if (li) { gapSel = li.dataset.ll; renderGaps(); } };
     if (!gapSel) gapSel = lls[0][0];
     renderGapDetail(gapSel);
@@ -1125,9 +1072,14 @@
     const list = ps.slice(0, 25).map(p => `- ${p.name ? p.name + ', ' : ''}${p.address || ''}`);
     return `Subject: Questions about your campus-area rentals for 2027–28\n\nHi ${ll},\n\nI'm a UW–Madison student looking for housing for the 2027–28 school year. I'm interested in these properties:\n${list.join('\n')}${ps.length > 25 ? `\n(and ${ps.length - 25} more)` : ''}\n\nI couldn't find the following on your listings:\n${qs.join('\n')}\n\nThank you!\n`;
   }
-  function renderGapDetail(ll) {
+  async function renderGapDetail(ll) {
     const zh = lang === 'zh';
-    const ps = (byLL[ll] || []).slice().sort((a, b) => a.dist - b.dist);
+    let ps = gapCache.get(ll);
+    if (!ps) {
+      try { ps = (await DS.gapLandlord(ll)).rows; } catch (e) { $('gap-detail').innerHTML = `<p>${esc(apiErrText(e))}</p>`; return; }
+      gapCache.set(ll, ps);
+    }
+    if (ll !== gapSel) return;
     const p0 = ps.find(p => p.email) || ps.find(p => p.phone) || ps[0] || {};
     const site = (ps.find(p => p.landlord_site) || {}).landlord_site;
     const counts = {};
@@ -1154,7 +1106,7 @@
     $('emailed').onchange = e => { e.target.checked ? safeSet('emailed:' + ll, TODAY_ISO()) : (() => { try { localStorage.removeItem('isthmus:emailed:' + ll); } catch { } })(); renderGaps(); };
     $('gap-detail').querySelectorAll('a[data-go]').forEach(a => a.onclick = () => {
       document.querySelector('.tab[data-view="map"]').click();
-      setTimeout(() => { const p = P.find(x => x.id === a.dataset.go); map.setView([p.lat, p.lng], 17); select(p.id); }, 50);
+      setTimeout(() => select(a.dataset.go, false, 17), 50);
     });
   }
   const TODAY_ISO = () => new Date().toISOString().slice(0, 10);
@@ -1162,9 +1114,7 @@
   // ---------- sources view
   function renderSources() {
     const zh = lang === 'zh';
-    const s = META.sources, lab = META.source_labels;
-    const rows = Object.entries(s).filter(([, n]) => n).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<tr><td>${esc(lab[k] || k)}</td><td class="r">${n}</td></tr>`).join('');
-    const llRows = Object.entries(llCount).sort((a, b) => b[1] - a[1]).map(([n, c]) => `<tr><td>${esc(n)}</td><td class="r">${c}</td></tr>`).join('');
+    const llRows = M.landlords.map(([n, c]) => `<tr><td>${esc(n)}</td><td class="r">${c}</td></tr>`).join('');
     $('sources').innerHTML = zh ? `
       <h2>数据从哪来</h2>
       <p>数据于 <b>${esc(META.built)}</b> 抓取，范围是 Bascom Hall 周围 ${META.radius_mi} 英里（直线）。房东官网优先；UW 校外租房列表（offcampushousing.wisc.edu）补充没有官网数据的房东。同一单元两边都有时，以官网为准，UW 那条隐藏。</p>
@@ -1176,12 +1126,10 @@
       <p>The small mark next to each value says where it came from: <span class="prov official">site</span> a structured field on the landlord website; <span class="prov uw">UW list</span> the UW off-campus listing service; <span class="prov inferred">inferred</span> read from the listing's description text; <span class="prov absent">not listed</span> missing from an otherwise complete amenity list, so worth confirming. Values no source gives show as <span class="nostate">Not stated</span>.</p>
       <p>Walking times assume 1.25× the straight-line distance at 3 mph. Treat them as estimates.</p>
       ${TR ? `<p>Bus stops and routes come from Madison Metro's GTFS feed (downloaded ${esc(TR.built)}). Your places are saved only in this browser; address searches are sent to OpenStreetMap's Nominatim service.</p>` : ''}`;
-    $('sources').innerHTML += `<h2>${zh ? '各来源条数' : 'Rows by source'}</h2><table><tbody>${rows}</tbody></table>
-      <h2>${zh ? '各房东物业数' : 'Properties by landlord'}</h2><table><tbody>${llRows}</tbody></table>
-      ${META.no_geo && META.no_geo.length ? `<h2>${zh ? '无法定位' : 'Could not be placed on the map'}</h2><ul>${META.no_geo.map(([a, b]) => `<li>${esc(a)}: ${esc(b)}</li>`).join('')}</ul>` : ''}
-      ${TRACK ? `<h2>${zh ? '使用统计' : 'Usage counts'}</h2><p>${zh
-        ? '为了改进这个页面，它会匿名记录打开了哪些物业、用了哪些筛选和搜索词。不记录姓名、IP 地址或位置，不使用 cookie，浏览器里只存一个随机编号。'
-        : 'To improve this page it records, anonymously, which properties are opened and which filters and searches are used. No names, IP addresses or locations are stored and no cookies are set; the browser keeps only a random ID.'}</p>` : ''}`;
+    $('sources').innerHTML += `<h2>${zh ? '各房东物业数' : 'Properties by landlord'}</h2><table><tbody>${llRows}</tbody></table>
+      ${DS.remote ? `<h2>${zh ? '数据怎么提供、记录什么' : 'How the data is served, and what is logged'}</h2><p>${zh
+        ? '为防止数据被批量复制，这个页面不会把全部数据一次发给浏览器，而是按需向服务器要：列表一次一页，物业详情点开才取，每个访客每天能看的详情数有上限。每次请求会匿名记录（看了哪个物业、用了哪些筛选和搜索词），用来改进页面和发现批量抓取。不记录姓名，IP 地址只保存不可逆的哈希值，不使用 cookie；「我常去的地方」的坐标不会被记录。'
+        : 'To stop bulk copying, this page never sends the whole dataset to the browser. It asks the server for what you look at: one page of the list at a time, and a property only when you open it, with a daily limit on how many properties one visitor can open. Each request is logged anonymously (which property, which filters and search words) to improve the page and spot scraping. No names are stored, IP addresses only as a one-way hash, and no cookies are set; the coordinates of your saved places are never logged.'}</p>` : ''}`;
   }
 
   // ---------- language
@@ -1216,9 +1164,5 @@
     }).catch(() => { });
   }
   const deep = decodeURIComponent((location.hash.match(/p=([^&]+)/) || [])[1] || '');
-  if (deep && P.some(p => p.id === deep)) {
-    const p = P.find(x => x.id === deep);
-    map.setView([p.lat, p.lng], 17);
-    select(deep, false);
-  }
+  if (deep) select(deep, false, 17);
 })();

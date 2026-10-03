@@ -10,20 +10,18 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<link rel="stylesheet" href="style.css?v=2bcc7a4a">
+<link rel="stylesheet" href="style.css?v=cb8e4ba7">
 <script src="theme.js?v=f138724b"></script>
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="wordmark">Isthmus</span><span class="tagline" data-i18n="tagline">Rentals near UW–Madison</span></div>
+  <div class="brand"><span class="wordmark">Isthmus</span></div>
   <nav class="tabs" role="tablist">
     <button role="tab" class="tab active" data-view="map" data-i18n="tab_map">Map</button>
     <button role="tab" class="tab" data-view="gaps" data-i18n="tab_gaps">Missing info</button>
     <button role="tab" class="tab" data-view="sources" data-i18n="tab_sources">Sources</button>
   </nav>
   <div class="top-right">
-    <span class="stat" id="stat-props"></span>
-    <span class="stat" id="stat-units"></span>
     <button class="lang ap-btn" id="appearance" aria-label="Appearance"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor"/></svg><span data-i18n="appearance">Appearance</span></button>
     <button class="lang" id="lang" aria-label="Switch language">中文</button>
   </div>
@@ -140,7 +138,6 @@
   <div class="gaps-layout">
     <aside class="gaps-list">
       <p class="gaps-intro" data-i18n="gaps_intro">Every property below is missing something a renter needs, or has a value that disagrees between sources. Pick a landlord to see what to ask them.</p>
-      <div id="gap-summary"></div>
       <ol id="gap-landlords"></ol>
     </aside>
     <section class="gaps-detail" id="gap-detail"></section>
@@ -158,7 +155,9 @@
 <button id="viewswitch" class="viewswitch" type="button"></button>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="data/transit.js?v=7d94bb8b"></script>
-<script src="data/properties.js?v=e9ce038d"></script>
-<script src="app.js?v=42023985"></script>
+<script src="data/config.js?v=36a0155d"></script>
+<script src="engine.js?v=c86aceb9"></script>
+<script src="guard-client.js?v=9af92d3c"></script>
+<script src="app.js?v=4a56016a"></script>
 </body>
 </html>

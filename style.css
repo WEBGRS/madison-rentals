@@ -70,7 +70,6 @@ a { color: var(--lake-ink); }
 .swatches button.on { box-shadow: 0 0 0 2px var(--ink); }
 .brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .wordmark { font: italic 400 28px/1 "Instrument Serif", Georgia, serif; color: var(--lake-ink); letter-spacing: -.01em; }
-.tagline { font-size: 13px; color: var(--ink-2); white-space: nowrap; }
 .tabs { display: flex; gap: 4px; }
 .tab {
   border: 0; background: none; padding: 8px 12px; border-radius: var(--radius-s);
@@ -284,9 +283,6 @@ input[type=range] { width: 100%; accent-color: var(--lake); }
 .gaps-layout { display: flex; flex: 1; min-height: 0; }
 .gaps-list { width: 420px; flex: none; overflow-y: auto; border-right: 1px solid var(--line); background: var(--card); padding: 16px; }
 .gaps-intro { margin: 0 0 12px; color: var(--ink-2); max-width: 60ch; }
-.sumtbl { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 14px; }
-.sumtbl td { padding: 3px 0; border-bottom: 1px solid var(--line); }
-.sumtbl td:last-child { text-align: right; font-weight: 600; }
 #gap-landlords { list-style: none; margin: 0; padding: 0; }
 #gap-landlords li { display: flex; justify-content: space-between; gap: 10px; padding: 9px 10px; border-radius: var(--radius-s); cursor: pointer; }
 #gap-landlords li:hover, #gap-landlords li.sel { background: var(--lake-wash); }
@@ -323,7 +319,7 @@ textarea.draft { width: 100%; min-height: 260px; font: 13px/1.5 "Instrument Sans
   .wordmark { font-size: 22px; }
   .ap-btn span { display: none; }
   .top .ap-btn { padding: 5px 8px; }
-  .tagline, .stat, #admin-link { display: none; }
+  #admin-link { display: none; }
   .tabs { gap: 2px; flex: none; }
   .tab { padding: 6px 7px; font-size: 14px; white-space: nowrap; }
   .top-right { margin-left: auto; gap: 6px; flex: none; position: static; }
@@ -393,7 +389,6 @@ textarea.draft { width: 100%; min-height: 260px; font: 13px/1.5 "Instrument Sans
 .pchip .pc-x { padding: 3px 9px 3px 5px; color: var(--ink-2); font-weight: 400; }
 .pchip.on { background: var(--badger); border-color: var(--badger); }
 .pchip.on button { color: #fff; }
-.place-hint { font-size: 13px; color: var(--ink-2); }
 .place-form { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--paper); }
 .pf-row { display: flex; gap: 8px 12px; align-items: center; flex-wrap: wrap; }
 .pf-row input { flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--card); }
