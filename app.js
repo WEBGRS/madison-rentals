@@ -6,6 +6,21 @@
   const LOCAL = window.HOUSING ? E.prepare(window.HOUSING, window.TRANSIT) : null;
   const G = !LOCAL && CFG.api && window.WebgrsGuard ? WebgrsGuard.create({ api: CFG.api, sitekey: CFG.sitekey, site: 'rentals' }) : null;
   if (!LOCAL && !G) { document.body.innerHTML = '<p style="padding:24px">No data: run <code>python scraper/run_all.py</code>, or point data/config.js at the API.</p>'; return; }
+  // Missing-info lists are for the owner only: on this machine, or on the public site with the admin token saved in this browser (#owner)
+  function ownerPrompt() {
+    if (LOCAL || !/(^|[#&])owner\b/.test(location.hash)) return false;
+    const t = (prompt('Admin token') || '').trim();
+    if (t) { safeSet('owner', t); safeSet('notrack', '1'); }
+    try { history.replaceState(null, '', location.pathname + location.search); } catch { /* file url */ }
+    return true;
+  }
+  ownerPrompt();
+  const OWNER = () => !!LOCAL || !!safeGet('owner');
+  const ownerGet = path => fetch(CFG.api.replace(/\/$/, '') + path, { headers: { Authorization: 'Bearer ' + safeGet('owner') } }).then(async r => {
+    if (r.status === 401) { try { localStorage.removeItem('isthmus:owner'); } catch { /* storage blocked */ } syncOwner(); }
+    if (!r.ok) { const e = new Error('owner'); e.status = r.status; e.data = await r.json().catch(() => ({})); throw e; }
+    return r.json();
+  });
   const DS = {
     remote: !LOCAL,
     meta: () => LOCAL ? Promise.resolve(E.metaOf(LOCAL)) : fetch(CFG.api.replace(/\/$/, '') + '/api/meta').then(r => { if (!r.ok) throw new Error('meta'); return r.json(); }),
@@ -13,8 +28,8 @@
     property: (id, q) => LOCAL ? Promise.resolve(E.property(LOCAL, id, q)) : G.call('/api/property', { method: 'POST', body: { id, q } }),
     peek: ids => LOCAL ? Promise.resolve({ rows: E.peek(LOCAL, ids) }) : G.call('/api/peek', { method: 'POST', body: { ids } }),
     find: text => LOCAL ? Promise.resolve({ rows: E.find(LOCAL, text) }) : G.call('/api/find?q=' + encodeURIComponent(text)),
-    gaps: () => LOCAL ? Promise.resolve(E.gaps(LOCAL)) : G.call('/api/gaps'),
-    gapLandlord: ll => LOCAL ? Promise.resolve({ rows: E.gapLandlord(LOCAL, ll) }) : G.call('/api/gaps/landlord?ll=' + encodeURIComponent(ll)),
+    gaps: () => LOCAL ? Promise.resolve(E.gaps(LOCAL)) : ownerGet('/api/gaps'),
+    gapLandlord: ll => LOCAL ? Promise.resolve({ rows: E.gapLandlord(LOCAL, ll) }) : ownerGet('/api/gaps/landlord?ll=' + encodeURIComponent(ll)),
   };
   if (G) G.session().catch(() => { });  // the human check runs while the map draws
   let M;
@@ -26,7 +41,7 @@
 
   // ---------- i18n
   const ZH = {
-    tab_map: '地图', tab_gaps: '缺失信息', tab_sources: '数据来源',
+    tab_grid: '全部房源', tab_map: '地图', tab_gaps: '缺失信息', tab_sources: '数据来源',
     search_ph: '街道、楼名或房东', bedrooms: '卧室数', studio: '单间', per_person: '每人', whole_unit: '整套',
     lease: '租期', term_any: '不限', term_2728: '2027 秋季（2027–28）',
     term_now: '现在 / 2026–27 和转租', term_unknown: '未说明', sort: '排序',
@@ -135,6 +150,7 @@
       setTiles();
       drawRings(); renderMarkers(); renderLegend();
       if (state.sel) select(state.sel, false);
+      if (curPage) renderPage(curPage);
     });
   }
   const ringLayer = L.layerGroup().addTo(map);
@@ -398,31 +414,52 @@
     return s.length > 3 ? `${f(s[0])}–${f(s[s.length - 1])}` : s.map(f).join(', ');
   }
 
+  // Lines and tags shared by the map's list and the card grid
+  const subHTML = p => (p.name && p.address ? `<span>${esc(p.address)}</span>` : '')
+    + `<span>${p.landlord ? esc(p.landlord) + ' · ' : ''}<span class="nw">${distLabel(p._d)}</span></span>`
+    + placeDistLine(p);
+  const tagsHTML = p => `${sortChip(p)}${bedsSummary(p._beds) ? `<span class="tag">${esc(bedsSummary(p._beds))}</span>` : ''}${p._2728 ? '<span class="tag t2728">2027–28</span>' : ''}${p._stale ? `<span class="tag gap">${lang === 'zh' ? '可能过期' : 'May be outdated'}</span>` : ''}${p._unv ? `<span class="tag gap">${lang === 'zh' ? '计价未核实' : 'Price basis unconfirmed'}</span>` : ''}${p._gapsN ? `<span class="tag gap">${F().gaps(p._gapsN)}</span>` : ''}`;
+  const emptyText = () => searchErr ? esc(apiErrText(searchErr)) : lang === 'zh' ? '没有符合条件的物业。放宽价格或距离，或点“重置”。' : 'Nothing matches. Widen the price or distance, or press Reset.';
+  const moreText = () => lang === 'zh' ? `再显示 ${Math.min(60, total - current.length)} 个（共 ${total} 个）` : `Show ${Math.min(60, total - current.length)} more (of ${total})`;
+
   function renderList() {
+    renderGrid();
     const ol = $('results');
     if (!searched) { ol.innerHTML = `<li class="empty">${lang === 'zh' ? '加载中…' : 'Loading…'}</li>`; return; }
-    if (!current.length) {
-      ol.innerHTML = `<li class="empty">${searchErr ? esc(apiErrText(searchErr)) : lang === 'zh' ? '没有符合条件的物业。放宽价格或距离，或点“重置”。' : 'Nothing matches. Widen the price or distance, or press Reset.'}</li>`;
-      return;
-    }
-    const html = current.map(p => {
-      const title = p.name || p.address || '—';
-      const sub = (p.name && p.address ? `<span>${esc(p.address)}</span>` : '')
-        + `<span>${p.landlord ? esc(p.landlord) + ' · ' : ''}<span class="nw">${distLabel(p._d)}</span></span>`
-        + placeDistLine(p);
-      const has2728 = p._2728, gapsN = p._gapsN;
-      return `<li class="res${state.sel === p.id ? ' sel' : ''}" data-id="${esc(p.id)}" tabindex="0">
+    if (!current.length) { ol.innerHTML = `<li class="empty">${emptyText()}</li>`; return; }
+    const html = current.map(p => `<li class="res${state.sel === p.id ? ' sel' : ''}" data-id="${esc(p.id)}" tabindex="0">
         <span class="dot ${pbucket(p)}" style="${shownPrice(p) != null ? `background:var(--${pbucket(p)})` : ''}"></span>
-        <h3>${esc(title)}</h3>${priceHTML(p)}
-        <div class="sub">${sub}</div>
-        <div class="tags">${sortChip(p)}${bedsSummary(p._beds) ? `<span class="tag">${esc(bedsSummary(p._beds))}</span>` : ''}${has2728 ? '<span class="tag t2728">2027–28</span>' : ''}${p._stale ? `<span class="tag gap">${lang === 'zh' ? '可能过期' : 'May be outdated'}</span>` : ''}${p._unv ? `<span class="tag gap">${lang === 'zh' ? '计价未核实' : 'Price basis unconfirmed'}</span>` : ''}${gapsN ? `<span class="tag gap">${F().gaps(gapsN)}</span>` : ''}</div>
-      </li>`;
-    }).join('');
-    const more = current.length < total
-      ? `<li class="empty"><button class="btn ghost" id="more-res" type="button">${lang === 'zh' ? `再显示 ${Math.min(60, total - current.length)} 个（共 ${total} 个）` : `Show ${Math.min(60, total - current.length)} more (of ${total})`}</button></li>` : '';
+        <h3>${esc(p.name || p.address || '—')}</h3>${priceHTML(p)}
+        <div class="sub">${subHTML(p)}</div>
+        <div class="tags">${tagsHTML(p)}</div>
+      </li>`).join('');
+    const more = current.length < total ? `<li class="empty"><button class="btn ghost" id="more-res" type="button">${moreText()}</button></li>` : '';
     ol.innerHTML = html + (searchErr ? `<li class="empty">${esc(apiErrText(searchErr))}</li>` : more);
     if ($('more-res')) $('more-res').onclick = e => { e.stopPropagation(); e.target.disabled = true; loadMore(); };
   }
+
+  // ---------- all rentals: the same results as photo cards, no map; a card opens the property's own page
+  const initial = p => esc((p.name || p.address || '?').trim().charAt(0).toUpperCase());
+  const cardImg = p => `<div class="cimg${p.imfp ? ' fp' : ''}">${p.im
+    ? `<img loading="lazy" decoding="async" referrerpolicy="no-referrer" alt="" data-ini="${initial(p)}" src="${esc(p.im)}">`
+    : `<span class="ph" aria-hidden="true">${initial(p)}</span>`}</div>`;
+  // A photo that fails to load becomes the letter tile
+  document.addEventListener('error', e => {
+    const el = e.target;
+    if (el && el.tagName === 'IMG' && el.closest('.cimg')) el.replaceWith(Object.assign(document.createElement('span'), { className: 'ph', textContent: el.dataset.ini || '' }));
+  }, true);
+  function renderGrid() {
+    const g = $('grid'), gm = $('gmore');
+    gm.hidden = true;
+    if (!searched) { g.innerHTML = `<li class="empty">${lang === 'zh' ? '加载中…' : 'Loading…'}</li>`; return; }
+    if (!current.length) { g.innerHTML = `<li class="empty">${emptyText()}</li>`; return; }
+    g.innerHTML = current.map(p => `<li><a class="card" href="#p=${encodeURIComponent(p.id)}">${cardImg(p)}
+        <div class="cbody"><div class="ctop"><h3>${esc(p.name || p.address || '—')}</h3>${priceHTML(p)}</div>
+        <div class="sub">${subHTML(p)}</div><div class="tags">${tagsHTML(p)}</div></div></a></li>`).join('')
+      + (searchErr ? `<li class="empty">${esc(apiErrText(searchErr))}</li>` : '');
+    if (current.length < total && !searchErr) { gm.hidden = false; gm.disabled = false; gm.textContent = moreText(); }
+  }
+  $('gmore').onclick = e => { e.target.disabled = true; loadMore(); };
 
   function renderMarkers() {
     markerLayer.clearLayers();
@@ -601,12 +638,8 @@
     document.body.classList.add('m-drawer');
     dr.querySelector('.close').onclick = closeDrawer;
   }
-  async function select(id, pan = true, zoom = 0) {
-    state.sel = id;
-    const my = ++selSeq;
-    let r;
-    try { r = await DS.property(id, queryParams()); } catch (e) { if (my === selSeq && state.sel === id) drawerError(e); return; }
-    if (my !== selSeq || state.sel !== id || !r) return;
+  // Pieces of a property's detail, shared by the map's side panel and the full-width page
+  function detailParts(r) {
     const p = r.p;
     names.set(p.id, p.name || p.address);
     const d = miles(state.refPt, [p.lat, p.lng]);
@@ -695,24 +728,33 @@
       p.landlord_site ? `<a href="${esc(p.landlord_site)}" target="_blank" rel="noopener">${zh ? '房东官网' : 'Landlord website'}</a>` : '',
       p.contact_hidden && uwLink ? `<a href="${esc(uwLink[1])}" target="_blank" rel="noopener">${zh ? '通过 UW 租房列表联系房东' : 'Contact through the UW listing'}</a>` : '',
     ].filter(Boolean).join('');
+    return {
+      title: p.name || p.address,
+      addr: `<p class="addr">${esc(p.name ? p.address || '' : '')}${p.name && p.address ? ', ' : ''}${esc(p.city)} ${esc(p.zip || '')} — ${esc(p.landlord || (zh ? '房东未知' : 'Landlord unknown'))}</p>`,
+      overview: overview ? `<div class="overview">${overview}</div>` : '',
+      contact: `<div class="contact">${contact || `<span class="nostate">${zh ? '没找到联系方式' : 'No contact found'}</span>`}</div>`,
+      walk: `<div class="walk">${F().walk(walkMin(d), d.toFixed(2), esc(state.ref))}${p.geo && p.geo.startsWith('nominatim') ? `<br><small>${zh ? '位置为近似值（按地址检索）' : 'Approximate location (geocoded)'}</small>` : ''}${placesBlock(p)}</div>`,
+      bus: busBlock(p),
+      photos: photos ? `<div class="photos">${photos}</div>` : '',
+      issues: issues.length ? `<div class="issues">${issues.join('')}</div>` : '',
+      units: `<h4>${zh ? '户型与价格' : 'Units and prices'}</h4>${units}
+        ${hiddenShared ? `<p class="hidden-note">${zh ? `另有 ${hiddenShared} 个合住价格（两人一间）未显示，关掉"不算合住"可查看。` : `${hiddenShared} shared-room prices (two people per bedroom) are hidden; turn off "Leave out shared rooms" to see them.`}</p>` : ''}`,
+      terms: `<h4>${zh ? '条件' : 'Terms'}</h4><dl class="facts">${facts}${utilTxt}${fees}</dl>`,
+      amen: p.amenities ? `<h4>${zh ? '设施（原文）' : 'Amenities'}</h4><p class="desc">${p.amenities.filter(a => !/^[\d.,$\s]+$/.test(a)).map(esc).join(', ')}</p>` : '',
+      desc: p.description ? `<h4>${zh ? '描述（原文）' : 'Description'}</h4><p class="desc">${esc(p.description.slice(0, 1500))}</p>` : '',
+      srcs: `<h4>${zh ? '数据来源' : 'Where this came from'}</h4><ol class="srcs">${(p.links || []).map(([l, u]) => `<li><a href="${esc(u)}" target="_blank" rel="noopener">${esc(l)}</a></li>`).join('')}</ol>`,
+    };
+  }
+  async function select(id, pan = true, zoom = 0) {
+    state.sel = id;
+    const my = ++selSeq;
+    let r;
+    try { r = await DS.property(id, queryParams()); } catch (e) { if (my === selSeq && state.sel === id) drawerError(e); return; }
+    if (my !== selSeq || state.sel !== id || !r) return;
+    const p = r.p, o = detailParts(r);
     const dr = $('drawer');
-    dr.innerHTML = `<div class="dhead"><h2>${esc(p.name || p.address)}</h2><button class="close" aria-label="Close">×</button></div>
-      <p class="addr">${esc(p.name ? p.address || '' : '')}${p.name && p.address ? ', ' : ''}${esc(p.city)} ${esc(p.zip || '')} — ${esc(p.landlord || (zh ? '房东未知' : 'Landlord unknown'))}</p>
-      ${overview ? `<div class="overview">${overview}</div>` : ''}
-      <div class="contact">${contact || `<span class="nostate">${zh ? '没找到联系方式' : 'No contact found'}</span>`}</div>
-      <div class="walk">${F().walk(walkMin(d), d.toFixed(2), esc(state.ref))}${p.geo && p.geo.startsWith('nominatim') ? `<br><small>${zh ? '位置为近似值（按地址检索）' : 'Approximate location (geocoded)'}</small>` : ''}${placesBlock(p)}</div>
-      ${busBlock(p)}
-      ${photos ? `<div class="photos">${photos}</div>` : ''}
-      ${issues.length ? `<div class="issues">${issues.join('')}</div>` : ''}
-      <h4>${zh ? '户型与价格' : 'Units and prices'}</h4>
-      ${units}
-      ${hiddenShared ? `<p class="hidden-note">${zh ? `另有 ${hiddenShared} 个合住价格（两人一间）未显示，关掉左侧"不算合住"可查看。` : `${hiddenShared} shared-room prices (two people per bedroom) are hidden; turn off "Leave out shared rooms" to see them.`}</p>` : ''}
-      <h4>${zh ? '条件' : 'Terms'}</h4>
-      <dl class="facts">${facts}${utilTxt}${fees}</dl>
-      ${p.amenities ? `<h4>${zh ? '设施（原文）' : 'Amenities'}</h4><p class="desc">${p.amenities.filter(a => !/^[\d.,$\s]+$/.test(a)).map(esc).join(', ')}</p>` : ''}
-      ${p.description ? `<h4>${zh ? '描述（原文）' : 'Description'}</h4><p class="desc">${esc(p.description.slice(0, 1500))}</p>` : ''}
-      <h4>${zh ? '数据来源' : 'Where this came from'}</h4>
-      <ol class="srcs">${(p.links || []).map(([l, u]) => `<li><a href="${esc(u)}" target="_blank" rel="noopener">${esc(l)}</a></li>`).join('')}</ol>`;
+    dr.innerHTML = `<div class="dhead"><h2>${esc(o.title)}</h2><button class="close" aria-label="Close">×</button></div>
+      ${o.addr}${o.overview}${o.contact}${o.walk}${o.bus}${o.photos}${o.issues}${o.units}${o.terms}${o.amen}${o.desc}${o.srcs}`;
     dr.hidden = false;
     document.body.classList.add('m-drawer');
     dr.scrollTop = 0;
@@ -732,7 +774,7 @@
     $('lb-cap').textContent = cap || '';
     $('lightbox').hidden = false;
     $('lb-close').focus();
-    track('plan', { p: state.sel });
+    track('plan', { p: state.sel || pageId });
   }
   function closeLightbox() { $('lightbox').hidden = true; $('lb-img').removeAttribute('src'); }
   $('lightbox').onclick = e => { if (e.target === $('lightbox') || e.target.closest('#lb-close')) closeLightbox(); };
@@ -749,6 +791,79 @@
     lineLayer.clearLayers();
     document.querySelectorAll('.res.sel').forEach(e => e.classList.remove('sel'));
   }
+
+  // ---------- property page (all-rentals view): the details on the left, a small map and how to reach it on the right
+  let pageId = null, pageNav = false, pageSeq = 0, curPage = null, pmap = null, gridScroll = [0, 0];
+  const TITLE = document.title;
+  const pageBar = () => `<div class="gp-bar"><button class="back" id="gback" type="button">${lang === 'zh' ? '← 全部房源' : '← All rentals'}</button></div>`;
+  function pageShell(inner) {
+    $('gpage').innerHTML = pageBar() + `<div class="gp"><div class="gp-main">${inner}</div></div>`;
+    $('gback').onclick = leavePage;
+  }
+  async function openPage(id, nav) {
+    if (pageId == null) gridScroll = [$('gwrap').scrollTop, $('view-grid').scrollTop];
+    pageId = id; pageNav = !!nav;
+    const my = ++pageSeq, g = $('gpage');
+    g.hidden = false;
+    document.body.classList.add('page-open');
+    g.scrollTop = 0; $('view-grid').scrollTop = 0;
+    pageShell(`<h2>${esc(names.get(id) || '')}</h2><p class="addr">${lang === 'zh' ? '加载中…' : 'Loading…'}</p>`);
+    let r;
+    try { r = await DS.property(id, queryParams()); } catch (e) { if (my === pageSeq) pageShell(`<p class="issues">${esc(apiErrText(e))}</p>`); return; }
+    if (my !== pageSeq) return;
+    if (!r) { pageShell(`<p class="issues">${lang === 'zh' ? '没有这个物业。' : 'No such property.'}</p>`); return; }
+    curPage = r;
+    renderPage(r);
+    document.title = (r.p.name || r.p.address) + ' · ' + TITLE;
+  }
+  function renderPage(r) {
+    const p = r.p, o = detailParts(r), g = $('gpage'), top = g.scrollTop;
+    g.innerHTML = pageBar() + `<div class="gp"><div class="gp-main"><h2>${esc(o.title)}</h2>${o.addr}${o.overview}${o.photos}${o.issues}${o.units}${o.terms}${o.amen}${o.desc}${o.srcs}</div>
+      <aside class="gp-side"><div class="gp-map" id="pmap" role="img" aria-label="${esc(lang === 'zh' ? `${o.title} 的位置` : `Where ${o.title} is`)}"></div>${o.contact}${o.walk}${o.bus}</aside></div>`;
+    $('gback').onclick = leavePage;
+    g.scrollTop = top;
+    if (pmap) pmap.remove();
+    // Page scrolling stays page scrolling: no wheel zoom, and no dragging on touch screens
+    pmap = L.map('pmap', { scrollWheelZoom: false, dragging: !L.Browser.mobile }).setView([p.lat, p.lng], 16);
+    (BASEMAPS[basemap()] || BASEMAPS.color)(dark).forEach(t => t.addTo(pmap));
+    L.marker(state.refPt, { interactive: false, keyboard: false, icon: L.divIcon({ className: '', html: '<div class="campus-pin"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(pmap);
+    places.forEach(pl => L.marker([pl.lat, pl.lng], { interactive: false, keyboard: false, icon: pinIcon(pl.name, state.refKey === 'place:' + pl.id ? 'ref' : '') }).addTo(pmap));
+    L.circleMarker([p.lat, p.lng], { radius: 9, weight: 2.5, color: cssVar('paper'), fillColor: cssVar('ink'), fillOpacity: 1 }).addTo(pmap);
+  }
+  function closePage() {
+    if (pageId == null) return;
+    pageId = null; curPage = null; ++pageSeq;
+    if (pmap) { pmap.remove(); pmap = null; }
+    $('gpage').hidden = true;
+    $('gpage').innerHTML = '';
+    document.body.classList.remove('page-open');
+    document.title = TITLE;
+    [$('gwrap').scrollTop, $('view-grid').scrollTop] = gridScroll;
+  }
+  // Back undoes the card click; a page opened from a shared link just closes
+  function leavePage() {
+    if (pageNav) { history.back(); return; }
+    try { history.replaceState(null, '', location.pathname + location.search); } catch { /* file url */ }
+    closePage();
+  }
+  $('gpage').addEventListener('click', e => {
+    const b = e.target.closest('[data-img]');
+    if (b) openLightbox(b.dataset.img, b.dataset.cap);
+  });
+  const hashId = () => decodeURIComponent((location.hash.match(/p=([^&]+)/) || [])[1] || '');
+  // #p=<id>: the property page in the all-rentals view, the side panel on the map
+  window.addEventListener('hashchange', () => {
+    if (ownerPrompt()) { syncOwner(); return; }
+    const id = hashId();
+    if (curView === 'map') { if (id) select(id, false, 17); return; }
+    if (curView !== 'grid') showView('grid');
+    if (id) openPage(id, true); else closePage();
+  });
+  // A card for the property already in the address bar must still open
+  $('grid').addEventListener('click', e => {
+    const a = e.target.closest('a.card');
+    if (a && a.getAttribute('href') === location.hash) { e.preventDefault(); openPage(hashId(), false); }
+  });
 
   // ---------- controls
   const refSel = $('ref');
@@ -781,7 +896,7 @@
     refSel.value = key;
     if (save) safeSet('ref', key);
   }
-  function refChanged() { fillSort(); drawRings(); renderPlaces(); render(); if (state.sel) select(state.sel, false); }
+  function refChanged() { fillSort(); drawRings(); renderPlaces(); render(); if (state.sel) select(state.sel, false); if (curPage) renderPage(curPage); }
   refSel.onchange = () => { setRef(refSel.value); refChanged(); };
 
   function renderPlaces() {
@@ -895,7 +1010,8 @@
   };
   $('place-name').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('place-save').click(); } };
   $('place-cancel').onclick = resetPending;
-  $('place-map').onclick = () => startPick(ll => choose(ll.lat, ll.lng, '', 'map'));
+  // Picking a spot needs the map
+  $('place-map').onclick = () => { if (curView !== 'map') showView('map'); startPick(ll => choose(ll.lat, ll.lng, '', 'map')); };
   $('place-gps').onclick = () => {
     const zh = lang === 'zh';
     if (!navigator.geolocation) { placeMsg(zh ? '这个浏览器不能提供位置。' : 'This browser cannot share its location.'); return; }
@@ -942,7 +1058,11 @@
   $('place-search').onclick = searchPlace;
   $('place-q').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); searchPlace(); } };
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { if (!$('lightbox').hidden) closeLightbox(); else if (picking) stopPick(); else closeDrawer(); }
+    if (e.key !== 'Escape') return;
+    if (!$('lightbox').hidden) closeLightbox();
+    else if (picking) stopPick();
+    else if (curView === 'grid' && pageId != null) leavePage();
+    else closeDrawer();
   });
 
   $('q').oninput = e => { state.q = e.target.value; render(); };
@@ -971,6 +1091,7 @@
     state.noShared = e.target.checked; safeSet('noshared', state.noShared ? '1' : '0');
     renderLegend(); render();
     if (state.sel) select(state.sel, false);
+    if (pageId != null) openPage(pageId, pageNav);
   };
   const llSel = $('landlord');
   M.landlords.forEach(([n, c]) => llSel.add(new Option(`${n} (${c})`, n)));
@@ -1023,14 +1144,35 @@
     if ($('lg-bus')) $('lg-bus').onchange = e => { showBus = e.target.checked; safeSet('bus', showBus ? '1' : '0'); syncBus(); };
   }
 
-  // ---------- tabs
+  // ---------- views: all rentals (cards), map (list + map), missing info (owner only), sources
+  // One set of filters moves to whichever list is showing
+  let curView = '';
+  function showView(name) {
+    if (name === 'gaps' && !OWNER()) name = 'grid';
+    curView = name;
+    document.querySelectorAll('.tab').forEach(x => {
+      const on = x.dataset.view === name;
+      x.classList.toggle('active', on);
+      x.setAttribute('aria-selected', String(on));
+    });
+    document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
+    ['grid', 'map', 'gaps', 'sources'].forEach(v => document.body.classList.toggle('v-' + v, v === name));
+    const f = document.querySelector('.filters');
+    if (name === 'grid' && f.parentNode !== $('grail')) $('grail').appendChild(f);
+    if (name === 'map' && f.parentNode !== $('rail')) $('rail').insertBefore(f, $('results'));
+    safeSet('view', name);
+    if (name === 'map') setTimeout(() => map.invalidateSize(), 0);
+    if (name === 'gaps') renderGaps();
+    if (name === 'sources') renderSources();
+  }
+  function syncOwner() {
+    $('view-gaps').hidden = !OWNER();
+    document.querySelector('.tab[data-view="gaps"]').hidden = !OWNER();
+    if (!OWNER() && curView === 'gaps') showView('grid');
+  }
   document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
-    document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
-    document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + t.dataset.view));
-    if (t.dataset.view !== 'map') track('tab', { t: t.dataset.view });
-    if (t.dataset.view === 'map') setTimeout(() => map.invalidateSize(), 0);
-    if (t.dataset.view === 'gaps') renderGaps();
-    if (t.dataset.view === 'sources') renderSources();
+    if (t.dataset.view !== curView) track('tab', { t: t.dataset.view });
+    showView(t.dataset.view);
   });
 
   // ---------- gaps view
@@ -1136,12 +1278,16 @@
   $('lang').onclick = () => {
     lang = lang === 'zh' ? 'en' : 'zh'; safeSet('lang', lang); applyLang(); fillRef(); fillSort(); renderPlaces(); renderLegend(); render();
     track('lang', { to: lang });
-    if ($('view-gaps').classList.contains('active')) renderGaps();
-    if ($('view-sources').classList.contains('active')) renderSources();
+    if (curView === 'gaps') renderGaps();
+    if (curView === 'sources') renderSources();
     if (state.sel) select(state.sel, false);
+    if (curPage) renderPage(curPage);
   };
 
   applyLang();
+  syncOwner();
+  const savedView = safeGet('view');
+  showView(['grid', 'map', 'gaps', 'sources'].includes(savedView) ? savedView : 'grid');
   setRef(safeGet('ref') || 'Bascom Hall', false);
   fillRef();
   state.sort = ({ rent: 'price' })[safeGet('sort')] || safeGet('sort') || 'dist';
@@ -1163,6 +1309,6 @@
       document.querySelector('.top-right').prepend(a);
     }).catch(() => { });
   }
-  const deep = decodeURIComponent((location.hash.match(/p=([^&]+)/) || [])[1] || '');
-  if (deep) select(deep, false, 17);
+  const deep = hashId();
+  if (deep) { if (curView === 'map') select(deep, false, 17); else { showView('grid'); openPage(deep, false); } }
 })();

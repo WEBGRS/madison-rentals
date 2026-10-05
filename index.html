@@ -10,15 +10,16 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<link rel="stylesheet" href="style.css?v=cb8e4ba7">
+<link rel="stylesheet" href="style.css?v=9c9fdf48">
 <script src="theme.js?v=f138724b"></script>
 </head>
 <body>
 <header class="top">
   <div class="brand"><span class="wordmark">Isthmus</span></div>
   <nav class="tabs" role="tablist">
-    <button role="tab" class="tab active" data-view="map" data-i18n="tab_map">Map</button>
-    <button role="tab" class="tab" data-view="gaps" data-i18n="tab_gaps">Missing info</button>
+    <button role="tab" class="tab active" data-view="grid" data-i18n="tab_grid">All rentals</button>
+    <button role="tab" class="tab" data-view="map" data-i18n="tab_map">Map</button>
+    <button role="tab" class="tab" data-view="gaps" data-i18n="tab_gaps" hidden>Missing info</button>
     <button role="tab" class="tab" data-view="sources" data-i18n="tab_sources">Sources</button>
   </nav>
   <div class="top-right">
@@ -27,7 +28,16 @@
   </div>
 </header>
 
-<main id="view-map" class="view active">
+<main id="view-grid" class="view active">
+  <aside class="grail" id="grail"></aside>
+  <section class="gwrap" id="gwrap">
+    <ol class="grid" id="grid"></ol>
+    <button class="btn ghost gmore" id="gmore" type="button" hidden></button>
+  </section>
+  <article class="gpage" id="gpage" hidden></article>
+</main>
+
+<main id="view-map" class="view">
   <aside class="rail" id="rail">
     <div class="filters">
       <input id="q" type="search" autocomplete="off" data-i18n-ph="search_ph" placeholder="Street, building or landlord">
@@ -156,9 +166,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="data/transit.js?v=7d94bb8b"></script>
 <script src="data/config.js?v=36a0155d"></script>
-<script src="engine.js?v=c86aceb9"></script>
+<script src="engine.js?v=fce5e301"></script>
 <script src="guard-client.js?v=9af92d3c"></script>
-<script src="app.js?v=4a56016a"></script>
+<script src="app.js?v=f0dcccb4"></script>
 <script src="feedback.js?v=ee273937" data-site="rentals" data-mount=".top-right" data-before="#lang" data-class="lang" data-compact="860" data-float-below="429" data-float-bottom="42" defer></script>
 </body>
 </html>

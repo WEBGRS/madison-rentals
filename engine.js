@@ -40,6 +40,11 @@
       p._ac = p.ac === true;
       p._gapsN = (p.gaps || []).filter(function (g) { return !/not listed|rent basis/.test(g); }).length;
       p._stale = (p.stale || []).some(function (s) { return STALE.test(s); });
+      // Card picture: the first real photo (AppFolio's smaller size), else a floor plan drawing
+      var ph = (p.photos || []).filter(function (u) { return !/no_photo/.test(u); })[0];
+      var fp = p.listings.filter(function (x) { return x.fpimg; })[0];
+      p._im = ph ? ph.replace(/(images\.cdn\.appfolio\.com\/.*)\/large\.jpg$/, '$1/medium.jpg') : fp ? fp.fpimg : null;
+      p._imfp = !ph && !!fp;
       var best = null;
       stops.forEach(function (s) { var d = miles([p.lat, p.lng], [s[0], s[1]]); if (best == null || d < best) best = d; });
       p._busD = best;
@@ -144,6 +149,7 @@
       _unv: ls.some(unconfirmed),
       _stale: p._stale,
       _gapsN: p._gapsN,
+      im: p._im, imfp: p._imfp,
     };
   }
 
