@@ -148,7 +148,7 @@
     IsthmusTheme.onChange(() => {
       dark = IsthmusTheme.isDark();
       setTiles();
-      drawRings(); renderMarkers(); renderLegend();
+      drawRings(); renderMarkers(); renderLegend(); renderGrid();
       if (state.sel) select(state.sel, false);
       if (curPage) renderPage(curPage);
     });
@@ -439,14 +439,25 @@
   }
 
   // ---------- all rentals: the same results as photo cards, no map; a card opens the property's own page
-  const initial = p => esc((p.name || p.address || '?').trim().charAt(0).toUpperCase());
+  // No photo: a quiet gray map of the spot instead (Esri gray canvas, zoom 16, 3 x 3 tiles centered on the property)
+  function spotMap(lat, lng) {
+    const z = 16, n = 2 ** z, r = lat * Math.PI / 180;
+    const tx = (lng + 180) / 360 * n, ty = (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n;
+    const x0 = Math.floor(tx) - 1, y0 = Math.floor(ty) - 1;
+    const base = `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/${dark ? 'World_Dark_Gray_Base' : 'World_Light_Gray_Base'}/MapServer/tile/${z}`;
+    const tiles = [0, 1, 2].flatMap(j => [0, 1, 2].map(i =>
+      `<img src="${base}/${y0 + j}/${x0 + i}" alt="" loading="lazy" decoding="async" style="left:${i * 256}px;top:${j * 256}px">`)).join('');
+    return `<div class="spot" aria-hidden="true"><div class="spot-tiles" style="transform:translate(${(-(tx - x0) * 256).toFixed(1)}px,${(-(ty - y0) * 256).toFixed(1)}px)">${tiles}</div><i class="spot-dot"></i><span class="spot-attr">Esri</span></div>`;
+  }
   const cardImg = p => `<div class="cimg${p.imfp ? ' fp' : ''}">${p.im
-    ? `<img loading="lazy" decoding="async" referrerpolicy="no-referrer" alt="" data-ini="${initial(p)}" src="${esc(p.im)}">`
-    : `<span class="ph" aria-hidden="true">${initial(p)}</span>`}</div>`;
-  // A photo that fails to load becomes the letter tile
+    ? `<img loading="lazy" decoding="async" referrerpolicy="no-referrer" alt="" data-lat="${p.lat}" data-lng="${p.lng}" src="${esc(p.im)}">`
+    : spotMap(p.lat, p.lng)}</div>`;
+  // A photo that fails to load becomes the map of the spot
   document.addEventListener('error', e => {
     const el = e.target;
-    if (el && el.tagName === 'IMG' && el.closest('.cimg')) el.replaceWith(Object.assign(document.createElement('span'), { className: 'ph', textContent: el.dataset.ini || '' }));
+    if (!el || el.tagName !== 'IMG' || !el.closest('.cimg') || el.closest('.spot')) return;
+    el.insertAdjacentHTML('afterend', spotMap(+el.dataset.lat, +el.dataset.lng));
+    el.remove();
   }, true);
   function renderGrid() {
     const g = $('grid'), gm = $('gmore');
