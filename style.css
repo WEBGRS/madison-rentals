@@ -529,3 +529,5 @@ body:not(.v-map) .viewswitch { display: none; }
   .gp-side { position: static; }
   .gp-map { height: 220px; }
 }
+/* The Star / Feedback pill steps aside for the full-screen details view on phones */
+@media (max-width: 860px) { body.m-drawer { --wgfb-display: none; } }
