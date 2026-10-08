@@ -1,6 +1,6 @@
 # Madison campus rentals map
 
-A map of rentals within two miles of the UW–Madison campus: 605 properties, 2,988 units or floor plans and 67 landlords, collected on 2026-10-01. Listings come straight from landlord websites and the UW Off-Campus Housing service, and every value on the map says where it came from.
+A map of rentals within two miles of the UW–Madison campus: 600 properties, 2,959 units or floor plans and 67 landlords, collected on 2026-09-30. Listings come straight from landlord websites and the UW Off-Campus Housing service, and every value on the map says where it came from.
 
 **[Open the map](https://webgrs.github.io/madison-rentals/)**
 
@@ -29,7 +29,7 @@ Landlords quote rent either per person or for the whole unit, and listings often
 
 ## Sources and privacy
 
-- Listings: landlord websites and the UW Off-Campus Housing service, collected on 2026-10-01. Individual landlords who appear only on the UW list have their phone and email left out here; those properties link to the UW listing instead.
+- Listings: landlord websites and the UW Off-Campus Housing service, collected on 2026-09-30. Individual landlords who appear only on the UW list have their phone and email left out here; those properties link to the UW listing instead.
 - Bus stops and routes: Madison Metro Transit's GTFS feed.
 - Map: Leaflet, with tiles from Esri and map data © OpenStreetMap contributors.
 - The listings are served by an API that hands out one page or one property at a time and logs each request anonymously (which property was opened, which filters and search words were used) to improve the page and spot bulk copying. No names are stored, IP addresses only as a one-way hash, and no cookies are set; the coordinates of your saved places are never logged.
