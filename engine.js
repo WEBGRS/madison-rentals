@@ -16,6 +16,7 @@
   }
   var BOUNDS = { bed: [500, 3000], unit: [800, 12000] };
   var STALE = /last updated|already passed|update date unknown|site not updated/i;
+  var LEASED = /\b(rented|leased|no availability)\b/i;
   var CHECKS = ['priced', 'heat', 'allutil', 'net', 'cats', 'dogs', 'inunit', 'parking', 'furn', 'ac'];
   var SORTS = ['dist', 'bus', 'places', 'price', 'price_desc', 'ppsf', 'size', 'movein', 'choice', 'complete'];
   var LIMITS = { page: 60, places: 10, peek: 60, find: 8 };
@@ -116,8 +117,11 @@
     var c = s.checks;
     if ((c.heat && !p._heat) || (c.net && !p._net) || (c.allutil && !p._allutil) || (c.cats && !p._cats) || (c.dogs && !p._dogs) ||
       (c.inunit && !p._inunit) || (c.parking && !p._parking) || (c.furn && !p._furn) || (c.ac && !p._ac)) return null;
-    var ls = p.listings.filter(function (x) { return matches(x, s); });
-    if (!ls.length) return null;
+    var all = p.listings.filter(function (x) { return matches(x, s); });
+    if (!all.length) return null;
+    // Units already leased stay in the detail but do not set prices or move-in while others are open
+    var open = all.filter(function (x) { return !LEASED.test(x.status || ''); });
+    var ls = open.length ? open : all;
     var nums = function (f) { return ls.map(f).filter(function (v) { return v != null; }); };
     var pb = nums(function (x) { return x.per_bed; });
     var minBed = pb.length ? Math.min.apply(null, pb) : null;
@@ -125,15 +129,15 @@
     var sq = ls.map(function (x) { return x.sqft; }).filter(function (v) { return v >= 150; });
     var psf = ls.filter(function (x) { return x.sqft >= 150 && unitRent(x) != null; }).map(function (x) { return unitRent(x) / x.sqft; });
     // Earliest move-in; 'now' and dates already past count as today
-    var moves = ls.map(function (x) {
+    var moves = (open.length ? open : []).map(function (x) {
       if (x.avail === 'now') return today;
       return /^\d{4}-\d{2}-\d{2}$/.test(x.avail || '') ? (x.avail < today ? today : x.avail) : null;
     }).filter(Boolean).sort();
     var beds = [];
-    ls.forEach(function (x) { if (x.beds != null && beds.indexOf(x.beds) < 0) beds.push(x.beds); });
+    all.forEach(function (x) { if (x.beds != null && beds.indexOf(x.beds) < 0) beds.push(x.beds); });
     return {
       id: p.id, name: p.name || null, address: p.address || null, landlord: p.landlord || null, lat: p.lat, lng: p.lng,
-      _d: r3(d), _n: ls.length,
+      _d: r3(d), _n: all.length, _leased: !open.length,
       _minBed: minBed,
       _minBedDiv: minBed != null && ls.every(function (x) { return x.per_bed !== minBed || !!x.pb_div; }),
       _minBedUnv: minBed != null && ls.some(function (x) { return x.per_bed === minBed && unconfirmed(x); }),
@@ -145,7 +149,7 @@
       _busD: r3(p._busD),
       _placesAvg: s.places.length ? r3(s.places.reduce(function (t, pl) { return t + miles([p.lat, p.lng], pl); }, 0) / s.places.length) : null,
       _beds: beds.sort(function (a, b) { return a - b; }),
-      _2728: ls.some(function (x) { return x.term === '2027-28'; }),
+      _2728: open.some(function (x) { return x.term === '2027-28'; }),
       _unv: ls.some(unconfirmed),
       _stale: p._stale,
       _gapsN: p._gapsN,
