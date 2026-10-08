@@ -59,13 +59,13 @@
   const ZHF = {
     dist_lbl: v => `距离 ≤ <b>${v} 英里</b>`, count: n => `${n} 个物业`,
     from: '起', per_person: '/人', per_unit: '/月', no_price: '未公开价格', walk: (m, mi, r) => `步行约 <b>${m} 分钟</b>（直线 ${mi} 英里）到 ${r}`,
-    gaps: n => `${n} 项缺失`, not_stated: '未说明',
+    not_stated: '未说明',
   };
   const ENF = {
     dist_lbl: v => `Within <b>${v} mi</b> of`, count: n => `${n} ${n === 1 ? 'property' : 'properties'}`,
     from: 'from', per_person: '/person', per_unit: '/mo', no_price: 'No price posted',
     walk: (m, mi, r) => `About <b>${m} min</b> walk (${mi} mi straight line) to ${r}`,
-    gaps: n => `${n} missing`, not_stated: 'Not stated',
+    not_stated: 'Not stated',
   };
   let lang = safeGet('lang') || 'en';
   const EN_TEXT = {};
@@ -414,11 +414,11 @@
     return s.length > 3 ? `${f(s[0])}–${f(s[s.length - 1])}` : s.map(f).join(', ');
   }
 
-  // Lines and tags shared by the map's list and the card grid
+  // Lines and tags shared by the map's list and the card grid; what is missing shows only in a property's detail
   const subHTML = p => (p.name && p.address ? `<span>${esc(p.address)}</span>` : '')
     + `<span>${p.landlord ? esc(p.landlord) + ' · ' : ''}<span class="nw">${distLabel(p._d)}</span></span>`
     + placeDistLine(p);
-  const tagsHTML = p => `${sortChip(p)}${bedsSummary(p._beds) ? `<span class="tag">${esc(bedsSummary(p._beds))}</span>` : ''}${p._2728 ? '<span class="tag t2728">2027–28</span>' : ''}${p._stale ? `<span class="tag gap">${lang === 'zh' ? '可能过期' : 'May be outdated'}</span>` : ''}${p._unv ? `<span class="tag gap">${lang === 'zh' ? '计价未核实' : 'Price basis unconfirmed'}</span>` : ''}${p._gapsN ? `<span class="tag gap">${F().gaps(p._gapsN)}</span>` : ''}`;
+  const tagsHTML = p => `${sortChip(p)}${bedsSummary(p._beds) ? `<span class="tag">${esc(bedsSummary(p._beds))}</span>` : ''}${p._2728 ? '<span class="tag t2728">2027–28</span>' : ''}${p._stale ? `<span class="tag gap">${lang === 'zh' ? '可能过期' : 'May be outdated'}</span>` : ''}${p._unv ? `<span class="tag gap">${lang === 'zh' ? '计价未核实' : 'Price basis unconfirmed'}</span>` : ''}`;
   const emptyText = () => searchErr ? esc(apiErrText(searchErr)) : lang === 'zh' ? '没有符合条件的物业。放宽价格或距离，或点“重置”。' : 'Nothing matches. Widen the price or distance, or press Reset.';
   const moreText = () => lang === 'zh' ? `再显示 ${Math.min(60, total - current.length)} 个（共 ${total} 个）` : `Show ${Math.min(60, total - current.length)} more (of ${total})`;
 
