@@ -521,7 +521,7 @@
   };
   function provTag(p, k) {
     const s = (p.prov || {})[k];
-    if (!s) return '';
+    if (!s || s === 'absent') return '';
     const t = PROV[s][lang === 'zh' ? 1 : 0];
     const tip = { official: 'From the landlord website', uw: 'From the UW off-campus listing service', inferred: 'Read from the listing description, not a structured field', absent: 'Not in the amenity list — confirm with the landlord', manual: 'Corrected by hand, e.g. from a landlord reply' }[s];
     return `<span class="prov ${s}" title="${esc(tip)}">${t}</span>`;
@@ -530,7 +530,7 @@
     if (v == null || v === '' || (Array.isArray(v) && !v.length)) return `<span class="nostate">${F().not_stated}</span>`;
     if (v === true) v = lang === 'zh' ? '是' : 'Yes';
     else if (v === false) v = lang === 'zh' ? '否' : 'No';
-    else if (v === 'not listed') v = lang === 'zh' ? '未列出（需确认）' : 'Not mentioned (ask)';
+    else if (v === 'not listed') return `<span class="nostate">${F().not_stated}</span>`;
     else if (Array.isArray(v)) v = lang === 'zh' ? v.map(t => UTIL_ZH[t] || t).join('、') : v.join(', ');
     else if (lang === 'zh' && ZH_RULES[k]) v = zhText(v, ZH_RULES[k]);
     return esc(v) + provTag(p, k);
@@ -723,14 +723,10 @@
     ].map(([k, l, v]) => `<dt>${l}</dt><dd>${factVal(p, k, v)}</dd>`).join('');
     const utilTxt = p.utilities_text ? `<dt>${zh ? '原文' : 'As written'}</dt><dd>${esc(p.utilities_text.slice(0, 220))}</dd>` : '';
     const fees = p.fees ? `<dt>${zh ? '费用' : 'Fees'}</dt><dd>${p.fees.map(esc).join('<br>')}${provTag(p, 'fees')}</dd>` : '';
-    const issues = [];
-    const gapList = (p.gaps || []);
-    if (gapList.length) issues.push(`<p><b>${zh ? '缺失：' : 'Missing:'}</b> ${gapList.map(g => esc(zhNote(g))).join(zh ? '、' : ', ')}</p>`);
-    const unclear = [...(p.conflicts || []), ...(p.stale || [])];
-    if (unclear.length) issues.push(`<p><b>${zh ? '不清楚 / 可能过期：' : 'Unclear or possibly outdated:'}</b></p><ul>${unclear.map(u => `<li>${esc(zhNote(u))}</li>`).join('')}</ul>`);
+    // Notes about the listing, plain text near the end; missing values just read "Not stated" where they belong
+    const notes = [...(p.conflicts || []), ...(p.stale || [])].map(u => esc(zhNote(u)));
     const banners = [...new Set(p.listings.flatMap(x => (x.notes || []).filter(n => /^Site banner:/.test(n))))];
-    if (banners.length) issues.push(`<p><b>${zh ? '官网公告' : 'Landlord site says'}:</b> ${banners.map(b => esc(b.replace(/^Site banner:\s*/, ''))).join(' / ')}</p>`);
-    if (p.uw_dupes_hidden) issues.push(`<p>${zh ? `另有 ${p.uw_dupes_hidden} 条 UW 列表重复数据已隐藏（以官网为准）。` : `${p.uw_dupes_hidden} duplicate rows from the UW list are hidden in favor of the landlord site.`}</p>`);
+    banners.forEach(b => notes.push((zh ? '官网公告：' : 'Landlord site says: ') + esc(b.replace(/^Site banner:\s*/, ''))));
     const photos = (p.photos || []).slice(0, 6).map(u => `<img src="${esc(u)}" alt="" loading="lazy" onerror="this.remove()">`).join('');
     const uwLink = (p.links || []).find(([l]) => /UW Off-Campus/.test(l));
     const contact = [
@@ -747,7 +743,7 @@
       walk: `<div class="walk">${F().walk(walkMin(d), d.toFixed(2), esc(state.ref))}${p.geo && p.geo.startsWith('nominatim') ? `<br><small>${zh ? '位置为近似值（按地址检索）' : 'Approximate location (geocoded)'}</small>` : ''}${placesBlock(p)}</div>`,
       bus: busBlock(p),
       photos: photos ? `<div class="photos">${photos}</div>` : '',
-      issues: issues.length ? `<div class="issues">${issues.join('')}</div>` : '',
+      notes: notes.length ? `<h4>${zh ? '说明' : 'Notes'}</h4><ul class="notes">${notes.map(n => `<li>${n}</li>`).join('')}</ul>` : '',
       units: `<h4>${zh ? '户型与价格' : 'Units and prices'}</h4>${units}
         ${hiddenShared ? `<p class="hidden-note">${zh ? `另有 ${hiddenShared} 个合住价格（两人一间）未显示，关掉"不算合住"可查看。` : `${hiddenShared} shared-room prices (two people per bedroom) are hidden; turn off "Leave out shared rooms" to see them.`}</p>` : ''}`,
       terms: `<h4>${zh ? '条件' : 'Terms'}</h4><dl class="facts">${facts}${utilTxt}${fees}</dl>`,
@@ -765,7 +761,7 @@
     const p = r.p, o = detailParts(r);
     const dr = $('drawer');
     dr.innerHTML = `<div class="dhead"><h2>${esc(o.title)}</h2><button class="close" aria-label="Close">×</button></div>
-      ${o.addr}${o.overview}${o.contact}${o.walk}${o.bus}${o.photos}${o.issues}${o.units}${o.terms}${o.amen}${o.desc}${o.srcs}`;
+      ${o.addr}${o.overview}${o.contact}${o.walk}${o.bus}${o.photos}${o.units}${o.terms}${o.notes}${o.amen}${o.desc}${o.srcs}`;
     dr.hidden = false;
     document.body.classList.add('m-drawer');
     dr.scrollTop = 0;
@@ -829,7 +825,7 @@
   }
   function renderPage(r) {
     const p = r.p, o = detailParts(r), g = $('gpage'), top = g.scrollTop;
-    g.innerHTML = pageBar() + `<div class="gp"><div class="gp-main"><h2>${esc(o.title)}</h2>${o.addr}${o.overview}${o.photos}${o.issues}${o.units}${o.terms}${o.amen}${o.desc}${o.srcs}</div>
+    g.innerHTML = pageBar() + `<div class="gp"><div class="gp-main"><h2>${esc(o.title)}</h2>${o.addr}${o.overview}${o.photos}${o.units}${o.terms}${o.notes}${o.amen}${o.desc}${o.srcs}</div>
       <aside class="gp-side"><div class="gp-map" id="pmap" role="img" aria-label="${esc(lang === 'zh' ? `${o.title} 的位置` : `Where ${o.title} is`)}"></div>${o.contact}${o.walk}${o.bus}</aside></div>`;
     $('gback').onclick = leavePage;
     g.scrollTop = top;
@@ -1271,12 +1267,12 @@
     $('sources').innerHTML = zh ? `
       <h2>数据从哪来</h2>
       <p>数据于 <b>${esc(META.built)}</b> 抓取，范围是 Bascom Hall 周围 ${META.radius_mi} 英里（直线）。房东官网优先；UW 校外租房列表（offcampushousing.wisc.edu）补充没有官网数据的房东。同一单元两边都有时，以官网为准，UW 那条隐藏。</p>
-      <p>每个字段旁边的小标签说明它从哪来：<span class="prov official">官网</span> 房东网站的结构化字段；<span class="prov uw">UW 列表</span> UW 校外租房服务；<span class="prov inferred">推断</span> 从房源描述文字里读出来的；<span class="prov absent">未列出</span> 设施清单里没提，需要向房东确认。没有任何来源的值显示为 <span class="nostate">未说明</span>。</p>
+      <p>每个字段旁边的小标签说明它从哪来：<span class="prov official">官网</span> 房东网站的结构化字段；<span class="prov uw">UW 列表</span> UW 校外租房服务；<span class="prov inferred">推断</span> 从房源描述文字里读出来的。没有任何来源的值显示为 <span class="nostate">未说明</span>。</p>
       <p>步行时间按直线距离 × 1.25、每小时 3 英里估算，只作参考。</p>
       ${TR ? `<p>公交站和线路来自 Madison Metro 官方 GTFS 数据（${esc(TR.built)} 下载）。「我常去的地方」只存在你自己的浏览器里；搜索地址时，搜索词会发给 OpenStreetMap 的 Nominatim 服务。</p>` : ''}` : `
       <h2>Where the data comes from</h2>
       <p>Collected on <b>${esc(META.built)}</b> for everything within ${META.radius_mi} miles (straight line) of Bascom Hall. Landlord websites come first; the UW off-campus listing service (offcampushousing.wisc.edu) fills in landlords without a site we can read. When the same unit appears in both, the landlord site wins and the UW row is hidden.</p>
-      <p>The small mark next to each value says where it came from: <span class="prov official">site</span> a structured field on the landlord website; <span class="prov uw">UW list</span> the UW off-campus listing service; <span class="prov inferred">inferred</span> read from the listing's description text; <span class="prov absent">not listed</span> missing from an otherwise complete amenity list, so worth confirming. Values no source gives show as <span class="nostate">Not stated</span>.</p>
+      <p>The small mark next to each value says where it came from: <span class="prov official">site</span> a structured field on the landlord website; <span class="prov uw">UW list</span> the UW off-campus listing service; <span class="prov inferred">inferred</span> read from the listing's description text. Values no source gives show as <span class="nostate">Not stated</span>.</p>
       <p>Walking times assume 1.25× the straight-line distance at 3 mph. Treat them as estimates.</p>
       ${TR ? `<p>Bus stops and routes come from Madison Metro's GTFS feed (downloaded ${esc(TR.built)}). Your places are saved only in this browser; address searches are sent to OpenStreetMap's Nominatim service.</p>` : ''}`;
     $('sources').innerHTML += `<h2>${zh ? '各房东物业数' : 'Properties by landlord'}</h2><table><tbody>${llRows}</tbody></table>

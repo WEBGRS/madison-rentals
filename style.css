@@ -250,7 +250,7 @@ input[type=range] { width: 100%; accent-color: var(--lake); }
 .facts { display: grid; grid-template-columns: 112px 1fr; gap: 6px 12px; font-size: 14px; margin: 0; }
 .facts dt { color: var(--ink-2); }
 .facts dd { margin: 0; }
-.nostate { color: var(--warn); border-bottom: 1px dashed var(--warn); }
+.nostate { color: var(--ink-2); }
 .prov { font-size: 11px; font-weight: 600; padding: 0 5px; border-radius: 3px; margin-left: 6px; vertical-align: 1px; white-space: nowrap; }
 .prov.official { background: var(--lake-wash); color: var(--lake-ink); }
 .prov.uw { border: 1px solid var(--badger); color: var(--badger); }
@@ -275,7 +275,7 @@ input[type=range] { width: 100%; accent-color: var(--lake); }
 .units tr.flagged td:first-child { box-shadow: inset 3px 0 0 var(--warn); padding-left: 6px; }
 .issues { background: var(--warn-wash); border-radius: var(--radius-s); padding: 10px 12px; font-size: 14px; }
 .issues p { margin: 0 0 4px; }
-.issues ul { margin: 4px 0 0; padding-left: 18px; }
+.notes { margin: 0; padding-left: 18px; font-size: 14px; color: var(--ink-2); }
 .desc { font-size: 14px; color: var(--ink-2); white-space: pre-line; }
 .srcs { padding-left: 18px; font-size: 14px; margin: 0; }
 
