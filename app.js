@@ -1,4 +1,4 @@
-/* Isthmus Rentals — map + filters + data-gap tracker */
+/* Madison Rentals — map + filters + data-gap tracker */
 (async () => {
   // ---------- data source: the full dataset on this machine (local server or file://), or the guarded API (public site)
   const E = window.IsthmusEngine;
@@ -67,7 +67,7 @@
     walk: (m, mi, r) => `About <b>${m} min</b> walk (${mi} mi straight line) to ${r}`,
     not_stated: 'Not stated',
   };
-  let lang = safeGet('lang') || 'en';
+  let lang = safeGet('lang') || ((navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en');
   const EN_TEXT = {};
   document.querySelectorAll('[data-i18n]').forEach(el => { EN_TEXT[el.dataset.i18n] = el.textContent; });
   const EN_PH = {};

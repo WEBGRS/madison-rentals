@@ -308,6 +308,7 @@ textarea.draft { width: 100%; min-height: 260px; font: 13px/1.5 "Instrument Sans
   .top::-webkit-scrollbar { display: none; }
   .brand { flex: none; }
   .wordmark { font-size: 22px; }
+  .wm-city { display: none; }
   .ap-btn span { display: none; }
   .top .ap-btn { padding: 5px 8px; }
   #admin-link { display: none; }
