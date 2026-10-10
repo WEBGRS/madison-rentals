@@ -68,7 +68,7 @@ a { color: var(--lake-ink); }
 .swatches { display: flex; gap: 10px; }
 .swatches button { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--card); box-shadow: 0 0 0 1px var(--line); padding: 0; }
 .swatches button.on { box-shadow: 0 0 0 2px var(--ink); }
-.brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; text-decoration: none; }
 .wordmark { font: italic 400 28px/1 "Instrument Serif", Georgia, serif; color: var(--lake-ink); letter-spacing: -.01em; }
 .tabs { display: flex; gap: 4px; }
 .tab {
