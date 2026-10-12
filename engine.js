@@ -19,7 +19,7 @@
   var LEASED = /\b(rented|leased|no availability)\b/i;
   var CHECKS = ['priced', 'heat', 'allutil', 'net', 'cats', 'dogs', 'inunit', 'parking', 'furn', 'ac'];
   var SORTS = ['dist', 'bus', 'places', 'price', 'price_desc', 'ppsf', 'size', 'movein', 'choice', 'complete'];
-  var LIMITS = { page: 60, places: 10, peek: 60, find: 8 };
+  var LIMITS = { page: 60, places: 10, peek: 60, find: 8, ids: 300 };
   var r3 = function (v) { return v == null ? null : Math.round(v * 1000) / 1000; };
   var unconfirmed = function (x) { return !!(x.bv && (x.bv[0] === 'none' || x.bv[0] === 'range-out')); };
 
@@ -85,6 +85,7 @@
       landlord: typeof q.landlord === 'string' ? q.landlord.slice(0, 120) : '',
       checks: checks,
       noShared: q.noShared !== false,
+      ids: Array.isArray(q.ids) ? q.ids.slice(0, LIMITS.ids).map(String) : null,
       places: Array.isArray(q.places) ? q.places.map(pt).filter(Boolean).slice(0, LIMITS.places) : [],
       offset: Math.max(0, Math.floor(num(q.offset, 0))),
       limit: Math.min(Math.max(1, Math.floor(num(q.limit, LIMITS.page))), LIMITS.page),
@@ -112,6 +113,7 @@
   function evaluate(p, s, ref, today) {
     var d = miles(ref, [p.lat, p.lng]);
     if (s.dist < 2 && d > s.dist) return null;
+    if (s.ids && s.ids.indexOf(p.id) < 0) return null;
     if (s.text && p._text.indexOf(s.text) < 0) return null;
     if (s.landlord && p.landlord !== s.landlord) return null;
     var c = s.checks;

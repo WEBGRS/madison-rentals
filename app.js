@@ -54,7 +54,7 @@
     appearance: '外观', ftoggle: '价格、距离等筛选',
     places: '我常去的地方', place_add: '＋ 添加地点', place_q_ph: '楼名、店名或街道地址', place_search: '搜索',
     place_map: '在地图上点选', place_gps: '用我现在的位置', place_name_ph: '起个名字，比如 实验室、健身房',
-    place_save: '保存', place_cancel: '取消',
+    place_save: '保存', place_cancel: '取消', f_saved: '已收藏',
   };
   const ZHF = {
     dist_lbl: v => `距离 ≤ <b>${v} 英里</b>`, count: n => `${n} 个物业`,
@@ -109,8 +109,40 @@
   const LM = META.landmarks;
   const state = {
     q: '', beds: new Set(), basis: 'bed', price: 3000, priceMin: 500, dist: 2, ref: 'Bascom Hall', refPt: LM['Bascom Hall'],
-    term: '', sort: 'dist', landlord: '', checks: {}, sel: null, noShared: safeGet('noshared') !== '0', refKey: 'Bascom Hall',
+    term: '', sort: 'dist', landlord: '', checks: {}, sel: null, noShared: safeGet('noshared') !== '0', refKey: 'Bascom Hall', saved: false,
   };
+
+  // ---------- saved listings (ids kept even when a listing leaves the data)
+  let saved = [];
+  try { saved = (JSON.parse(safeGet('saved') || '[]') || []).filter(x => typeof x === 'string' && x); } catch { saved = []; }
+  const cleanIds = a => [...new Set((Array.isArray(a) ? a : []).filter(x => typeof x === 'string' && x))];
+  const isSaved = id => saved.includes(id);
+  const saveSaved = () => safeSet('saved', JSON.stringify(saved));
+  let sync = { changed() { } };  // replaced by the account sync at the end
+  const starTitle = on => on ? (lang === 'zh' ? '已收藏' : 'Saved') : (lang === 'zh' ? '收藏' : 'Save');
+  const starBtn = (id, name) => `<button type="button" class="star" data-star="${esc(id)}" aria-pressed="${isSaved(id)}" title="${starTitle(isSaved(id))}" aria-label="${starTitle(isSaved(id))}${name ? ' · ' + esc(name) : ''}">${isSaved(id) ? '★' : '☆'}</button>`;
+  function updateStars() {
+    document.querySelectorAll('.star[data-star]').forEach(b => {
+      const on = isSaved(b.dataset.star);
+      b.setAttribute('aria-pressed', on);
+      b.title = starTitle(on);
+      b.textContent = on ? '★' : '☆';
+      const n = (b.getAttribute('aria-label') || '').split(' · ')[1];
+      b.setAttribute('aria-label', starTitle(on) + (n ? ' · ' + n : ''));
+    });
+    $('saved-n').textContent = saved.length ? ` (${saved.length})` : '';
+  }
+  // Keep a star click from opening the listing
+  document.addEventListener('click', e => {
+    const b = e.target.closest('.star[data-star]');
+    if (!b) return;
+    e.stopPropagation(); e.preventDefault();
+    const id = b.dataset.star;
+    saved = isSaved(id) ? saved.filter(x => x !== id) : [...saved, id];
+    saveSaved(); updateStars(); sync.changed();
+    if (state.saved) render();
+  }, true);
+  document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.closest && e.target.closest('.star[data-star]')) e.stopPropagation(); }, true);
 
   // ---------- map
   // Open on where the listings are (median of those within a mile), wider on phones
@@ -244,7 +276,7 @@
     return {
       text: state.q, beds: [...state.beds], basis: state.basis, price: state.price, priceMin: state.priceMin, dist: state.dist,
       ref: state.refPt, refName: state.refKey.startsWith('place:') ? 'my place' : state.refKey, term: state.term, sort: state.sort,
-      landlord: state.landlord, checks: state.checks, noShared: state.noShared, places: places.map(p => [p.lat, p.lng]), ...extra,
+      landlord: state.landlord, checks: state.checks, noShared: state.noShared, places: places.map(p => [p.lat, p.lng]), ids: state.saved ? saved.slice(0, 300) : undefined, ...extra,
     };
   }
   // Message for a refused request (daily quota, too fast, blocked)
@@ -322,6 +354,7 @@
       const r = await DS.search(queryParams({ offset: 0 }));
       if (my !== seq) return;
       searchErr = null; current = r.rows; total = r.total; markerRows = r.markers;
+      if (state.saved) { current = current.filter(p => isSaved(p.id)); markerRows = markerRows.filter(m => isSaved(m[0])); total = markerRows.length; }
     } catch (e) {
       if (my !== seq) return;
       searchErr = e; current = []; total = 0; markerRows = [];
@@ -339,7 +372,7 @@
       const r = await DS.search(queryParams({ offset: current.length }));
       if (my !== seq) return;
       r.rows.forEach(p => names.set(p.id, p.name || p.address));
-      current = current.concat(r.rows);
+      current = current.concat(state.saved ? r.rows.filter(p => isSaved(p.id)) : r.rows);
     } catch (e) { searchErr = e; }
     renderList();
   }
@@ -428,7 +461,7 @@
     if (!current.length) { ol.innerHTML = `<li class="empty">${emptyText()}</li>`; return; }
     const html = current.map(p => `<li class="res${state.sel === p.id ? ' sel' : ''}" data-id="${esc(p.id)}" tabindex="0">
         <span class="dot ${pbucket(p)}" style="${shownPrice(p) != null ? `background:var(--${pbucket(p)})` : ''}"></span>
-        <h3>${esc(p.name || p.address || '—')}</h3>${priceHTML(p)}
+        <h3>${esc(p.name || p.address || '—')}</h3>${priceHTML(p)}${starBtn(p.id, p.name || p.address)}
         <div class="sub">${subHTML(p)}</div>
         <div class="tags">${tagsHTML(p)}</div>
       </li>`).join('');
@@ -463,7 +496,7 @@
     gm.hidden = true;
     if (!searched) { g.innerHTML = `<li class="empty">${lang === 'zh' ? '加载中…' : 'Loading…'}</li>`; return; }
     if (!current.length) { g.innerHTML = `<li class="empty">${emptyText()}</li>`; return; }
-    g.innerHTML = current.map(p => `<li><a class="card" href="#p=${encodeURIComponent(p.id)}">${cardImg(p)}
+    g.innerHTML = current.map(p => `<li>${starBtn(p.id, p.name || p.address)}<a class="card" href="#p=${encodeURIComponent(p.id)}">${cardImg(p)}
         <div class="cbody"><div class="ctop"><h3>${esc(p.name || p.address || '—')}</h3>${priceHTML(p)}</div>
         <div class="sub">${subHTML(p)}</div><div class="tags">${tagsHTML(p)}</div></div></a></li>`).join('')
       + (searchErr ? `<li class="empty">${esc(apiErrText(searchErr))}</li>` : '');
@@ -746,6 +779,7 @@
     ].filter(Boolean).join('');
     return {
       title: p.name || p.address,
+      star: starBtn(p.id, p.name || p.address),
       addr: `<p class="addr">${esc(p.name ? p.address || '' : '')}${p.name && p.address ? ', ' : ''}${esc(p.city)} ${esc(p.zip || '')} — ${esc(p.landlord || (zh ? '房东未知' : 'Landlord unknown'))}</p>`,
       overview: overview ? `<div class="overview">${overview}</div>` : '',
       contact: `<div class="contact">${contact || `<span class="nostate">${zh ? '没找到联系方式' : 'No contact found'}</span>`}</div>`,
@@ -769,7 +803,7 @@
     if (my !== selSeq || state.sel !== id || !r) return;
     const p = r.p, o = detailParts(r);
     const dr = $('drawer');
-    dr.innerHTML = `<div class="dhead"><h2>${esc(o.title)}</h2><button class="close" aria-label="Close">×</button></div>
+    dr.innerHTML = `<div class="dhead"><h2>${esc(o.title)}</h2>${o.star}<button class="close" aria-label="Close">×</button></div>
       ${o.addr}${o.overview}${o.contact}${o.walk}${o.bus}${o.photos}${o.units}${o.terms}${o.notes}${o.amen}${o.desc}${o.srcs}`;
     dr.hidden = false;
     document.body.classList.add('m-drawer');
@@ -834,7 +868,7 @@
   }
   function renderPage(r) {
     const p = r.p, o = detailParts(r), g = $('gpage'), top = g.scrollTop;
-    g.innerHTML = pageBar() + `<div class="gp"><div class="gp-head"><h2>${esc(o.title)}</h2>${o.addr}${o.overview}${o.photos}</div>
+    g.innerHTML = pageBar() + `<div class="gp"><div class="gp-head"><div class="gp-title"><h2>${esc(o.title)}</h2>${o.star}</div>${o.addr}${o.overview}${o.photos}</div>
       <div class="gp-body">${o.units}${o.terms}${o.notes}${o.amen}${o.desc}${o.srcs}</div>
       <aside class="gp-side"><div class="gp-map" id="pmap" role="img" aria-label="${esc(lang === 'zh' ? `${o.title} 的位置` : `Where ${o.title} is`)}"></div>${o.contact}${o.walk}${o.bus}</aside></div>`;
     $('gback').onclick = leavePage;
@@ -887,7 +921,7 @@
   // ---------- my places (saved in this browser only)
   let places = [];
   try { places = (JSON.parse(safeGet('places') || '[]') || []).filter(x => x && x.id && isFinite(x.lat) && isFinite(x.lng)); } catch { places = []; }
-  const savePlaces = () => safeSet('places', JSON.stringify(places));
+  const savePlaces = () => { safeSet('places', JSON.stringify(places)); sync.changed(); };
   const placeLayer = L.layerGroup().addTo(map);
   const lineLayer = L.layerGroup().addTo(map);
   const previewLayer = L.layerGroup().addTo(map);
@@ -911,7 +945,7 @@
     else { if (!LM[key]) key = 'Bascom Hall'; state.ref = key; state.refPt = LM[key]; }
     state.refKey = key;
     refSel.value = key;
-    if (save) safeSet('ref', key);
+    if (save) { safeSet('ref', key); sync.changed(); }
   }
   function refChanged() { fillSort(); drawRings(); renderPlaces(); render(); if (state.sel) select(state.sel, false); if (curPage) renderPage(curPage); }
   refSel.onchange = () => { setRef(refSel.value); refChanged(); };
@@ -1101,6 +1135,7 @@
   $('dist').oninput = e => { state.dist = +e.target.value; render(); };
   $('term').onchange = e => { state.term = e.target.value; render(); };
   $('sort').onchange = e => { state.sort = e.target.value; safeSet('sort', state.sort); render(); };
+  $('f-saved').onchange = e => { state.saved = e.target.checked; render(); };
   const CHK = { 'f-priced': 'priced', 'f-heat': 'heat', 'f-allutil': 'allutil', 'f-net': 'net', 'f-cats': 'cats', 'f-dogs': 'dogs', 'f-inunit': 'inunit', 'f-parking': 'parking', 'f-furn': 'furn', 'f-ac': 'ac' };
   Object.entries(CHK).forEach(([id, k]) => { $(id).onchange = e => { state.checks[k] = e.target.checked; render(); }; });
   $('f-noshared').checked = state.noShared;
@@ -1114,7 +1149,8 @@
   M.landlords.forEach(([n, c]) => llSel.add(new Option(`${n} (${c})`, n)));
   llSel.onchange = e => { state.landlord = e.target.value; render(); };
   $('reset').onclick = () => {
-    Object.assign(state, { q: '', beds: new Set(), price: state.basis === 'bed' ? 3000 : 12000, dist: 2, term: '', sort: 'dist', landlord: '', checks: {}, noShared: true });
+    Object.assign(state, { q: '', beds: new Set(), price: state.basis === 'bed' ? 3000 : 12000, dist: 2, term: '', sort: 'dist', landlord: '', checks: {}, noShared: true, saved: false });
+    $('f-saved').checked = false;
     $('f-noshared').checked = true; safeSet('noshared', '1');
     $('q').value = ''; $('beds').querySelectorAll('button').forEach(b => b.classList.remove('on'));
     setPriceRange(); $('dist').value = 2; $('term').value = ''; $('sort').value = 'dist'; safeSet('sort', 'dist'); llSel.value = '';
@@ -1311,6 +1347,35 @@
   renderLegend();
   drawRings();
   render();
+  updateStars();
+  // Account sync: saved listings, places and the distance reference follow the account
+  if (window.MSSync) {
+    const DEF = 'Bascom Hall';
+    const okPlace = x => x && typeof x.id === 'string' && x.id && isFinite(x.lat) && isFinite(x.lng);
+    const cleanPlaces = a => (Array.isArray(a) ? a : []).filter(okPlace).map(x => ({ id: x.id, name: String(x.name || '').slice(0, 40), lat: +x.lat, lng: +x.lng })).slice(-10);
+    sync = window.MSSync('rentals', {
+      get: () => ({ saved: saved.slice(), places: places.map(x => ({ ...x })), ref: state.refKey }),
+      set: d => {
+        saved = d ? cleanIds(d.saved) : [];
+        places = d ? cleanPlaces(d.places) : [];
+        saveSaved(); safeSet('places', JSON.stringify(places));
+        setRef(d && typeof d.ref === 'string' ? d.ref : DEF);
+        fillRef(); refChanged(); renderLegend(); updateStars();
+      },
+      merge: (a, b) => {
+        a = a || {}; b = b || {};
+        const pm = new Map();
+        cleanPlaces(b.places).forEach(x => pm.set(x.id, x));
+        cleanPlaces(a.places).forEach(x => pm.set(x.id, x));
+        return {
+          saved: cleanIds([...cleanIds(b.saved), ...cleanIds(a.saved)]),
+          places: [...pm.values()].slice(-10),
+          ref: a.ref && a.ref !== DEF ? a.ref : (b.ref || DEF),
+        };
+      },
+      empty: d => !d || (!cleanIds(d.saved).length && !cleanPlaces(d.places).length && (!d.ref || d.ref === DEF)),
+    });
+  }
   let refHost = '';
   try { refHost = document.referrer ? new URL(document.referrer).hostname : ''; } catch { /* bad referrer */ }
   track('view', { ref: refHost, w: innerWidth, deep: (location.hash.match(/p=([^&]+)/) || [])[1] || undefined });
