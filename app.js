@@ -53,7 +53,7 @@
     noshared: '不算合住（两人一间的每人价）',
     appearance: '外观', ftoggle: '价格、距离等筛选',
     places: '我常去的地方', place_add: '＋ 添加地点', place_q_ph: '楼名、店名或街道地址', place_search: '搜索',
-    place_map: '在地图上点选', place_gps: '用我现在的位置', place_name_ph: '起个名字，比如 实验室、健身房',
+    place_map: '在地图上点选', place_gps: '用我现在的位置', place_name_ph: '给这个地点起个名字',
     place_save: '保存', place_cancel: '取消', f_saved: '已收藏',
   };
   const ZHF = {
@@ -76,7 +76,7 @@
   function applyLang() {
     document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
     document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = lang === 'zh' ? (ZH[el.dataset.i18n] || EN_TEXT[el.dataset.i18n]) : EN_TEXT[el.dataset.i18n]; });
-    document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = lang === 'zh' ? ZH[el.dataset.i18nPh] : EN_PH[el.dataset.i18nPh]; });
+    document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = lang === 'zh' ? ZH[el.dataset.i18nPh] : EN_PH[el.dataset.i18nPh]; el.setAttribute('aria-label', el.placeholder); });
     document.getElementById('lang').textContent = lang === 'zh' ? 'English' : '中文';
   }
 
@@ -859,9 +859,14 @@
     g.scrollTop = 0; $('view-grid').scrollTop = 0;
     pageShell(`<h2>${esc(names.get(id) || '')}</h2><p class="addr">${lang === 'zh' ? '加载中…' : 'Loading…'}</p>`);
     let r;
-    try { r = await DS.property(id, queryParams()); } catch (e) { if (my === pageSeq) pageShell(`<p class="issues">${esc(apiErrText(e))}</p>`); return; }
+    try { r = await DS.property(id, queryParams()); } catch (e) {
+      if (my !== pageSeq) return;
+      // An old link to a property that left the list is not a server failure
+      if (e && e.status === 404) r = null;
+      else { pageShell(`<p class="issues">${esc(apiErrText(e))}</p>`); return; }
+    }
     if (my !== pageSeq) return;
-    if (!r) { pageShell(`<p class="issues">${lang === 'zh' ? '没有这个物业。' : 'No such property.'}</p>`); return; }
+    if (!r) { pageShell(`<p class="issues">${lang === 'zh' ? '这个物业已不在列表里。' : 'This property is no longer listed.'}</p>`); return; }
     curPage = r;
     renderPage(r);
     document.title = (r.p.name || r.p.address) + ' · ' + TITLE;
