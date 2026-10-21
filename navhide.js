@@ -6,6 +6,7 @@
    data-mode  margin: the bar sits above an inner scroller in a flex column (pulled up with a negative margin)
               slide: a sticky bar over a scrolling page (moved up with translateY)
    data-ignore selector of scrollers that never move it (full-screen drawers, menus)
+   data-reveal up: comes back on any scroll up (default) | top: comes back only near the top, so it never follows the page
    window.NavHide.show() brings it back, e.g. after a view switch. <html> gets .nav-hidden while it is away. */
 (function () {
   if (window.NavHide) return;
@@ -45,7 +46,7 @@
     var d = y - prev;
     run = (run > 0) === (d > 0) ? run + d : d;  // distance moved in one direction
     if (run > 12) set(true);
-    else if (run < -12) set(false);
+    else if (run < -12 && ds.reveal !== 'top') set(false);
   }
 
   function init() {
