@@ -393,9 +393,15 @@
     if (picking) { pickFromList = false; stopPick(); }
     document.body.classList.toggle('m-list');
     setViewSwitch();
-    if (!document.body.classList.contains('m-list')) setTimeout(() => map.invalidateSize(), 0);
+    if (!document.body.classList.contains('m-list')) topBack();
     window.scrollTo(0, 0);
   };
+  // Phone top bar slides away while scrolling a list; the map always gets it back (and its new size)
+  function topBack() {
+    if (!window.NavHide || !document.documentElement.classList.contains('nav-hidden')) return;
+    NavHide.show();
+    setTimeout(() => map.invalidateSize(), 260);
+  }
 
   function priceLabel() {
     const zh = lang === 'zh', [pf, pc] = priceBounds();
@@ -747,6 +753,13 @@
       return `<details class="ugroup"${openAll || gi === 0 ? ' open' : ''}><summary><b>${label}</b><span>${esc(summary)}</span></summary>
         ${strip}<table class="units"><tbody>${xs.map(unitRow).join('')}</tbody></table></details>`;
     }).join('');
+    // Drawings from the landlord's site that no unit above points to
+    const shownFp = new Set(ls.map(x => x.fpimg).filter(Boolean));
+    const fpLabel = f => (f.name || '').replace(/^ULI\s+/, '').replace(/[\s-]*floor\s*plans?\s*$/i, '').trim();
+    const fpCapP = f => [fpLabel(f) || (zh ? '户型图' : 'Floor plan'), f.beds != null ? bbOf(f) : '', f.sqft ? f.sqft.toLocaleString() + ' ft²' : ''].filter(Boolean).join(' · ');
+    const extraFp = (p.fps || []).filter(f => !shownFp.has(f.img));
+    const moreFp = extraFp.length ? `<div class="fp-more"><div class="fp-more-h">${zh ? (shownFp.size ? '房东官网上的其他户型图' : '房东官网上的户型图') : (shownFp.size ? 'More floor plans from the landlord' : 'Floor plans from the landlord')} · ${extraFp.length}</div>
+      <div class="fp-strip">${extraFp.map(f => `<button type="button" class="fp-thumb" data-img="${esc(f.img)}" data-cap="${esc(fpCapP(f))}"><img src="${esc(f.img)}" alt="${esc(fpCapP(f))}" loading="lazy" onerror="this.parentElement.remove()"><span>${esc(fpLabel(f) || (f.beds != null ? bbOf(f) : (zh ? '户型图' : 'Floor plan')))}</span></button>`).join('')}</div></div>` : '';
     const unitMode = state.basis === 'unit';
     const ppAll = range(ls.map(unitMode ? unitRent : x => x.per_bed));
     const bedsAll = bedsSummary(bedsOf(ls));
@@ -763,7 +776,7 @@
       ['furnished', zh ? '家具' : 'Furnished', p.furnished],
       ['deposit', zh ? '押金' : 'Deposit', p.deposit ? money(p.deposit) : null],
     ].map(([k, l, v]) => `<dt>${l}</dt><dd>${factVal(p, k, v)}${k === 'utilities' && p.utilities_text
-      ? `<div class="muted">${zh ? '原文：' : 'As written: '}${esc(p.utilities_text.slice(0, 220))}</div>` : ''}</dd>`).join('');
+      ? `<details class="orig"><summary>${zh ? '原文' : 'As written'}</summary><div class="muted">${esc(p.utilities_text.slice(0, 220))}</div></details>` : ''}</dd>`).join('');
     const fees = p.fees ? `<dt>${zh ? '费用' : 'Fees'}</dt><dd>${p.fees.map(esc).join('<br>')}${provTag(p, 'fees')}</dd>` : '';
     // Notes about the listing, plain text near the end; missing values just read "Not stated" where they belong
     const notes = [...(p.conflicts || []), ...(p.stale || [])].map(u => esc(zhNote(u)));
@@ -787,11 +800,12 @@
       bus: busBlock(p),
       photos: photos ? `<div class="photos">${photos}</div>` : '',
       notes: notes.length ? `<h4>${zh ? '说明' : 'Notes'}</h4><ul class="notes">${notes.map(n => `<li>${n}</li>`).join('')}</ul>` : '',
-      units: `<h4>${zh ? '户型与价格' : 'Units and prices'}</h4>${units}
+      units: `<h4>${zh ? '户型与价格' : 'Units and prices'}</h4>${units}${moreFp}
         ${hiddenShared ? `<p class="hidden-note">${zh ? `另有 ${hiddenShared} 个合住价格（两人一间）未显示，关掉"不算合住"可查看。` : `${hiddenShared} shared-room prices (two people per bedroom) are hidden; turn off "Leave out shared rooms" to see them.`}</p>` : ''}`,
       terms: `<h4>${zh ? '条件' : 'Terms'}</h4><dl class="facts">${facts}${fees}</dl>`,
-      amen: p.amenities ? `<h4>${zh ? '设施（原文）' : 'Amenities'}</h4><p class="desc">${p.amenities.filter(a => !/^[\d.,$\s]+$/.test(a)).map(esc).join(', ')}</p>` : '',
-      desc: p.description ? `<h4>${zh ? '描述（原文）' : 'Description'}</h4><p class="desc">${esc(p.description.slice(0, 1500))}</p>` : '',
+      // Landlord's own wording, folded until asked for
+      amen: p.amenities ? `<details class="orig-sec"><summary><h4>${zh ? '设施（原文）' : 'Amenities (as written)'}</h4></summary><p class="desc">${p.amenities.filter(a => !/^[\d.,$\s]+$/.test(a)).map(esc).join(', ')}</p></details>` : '',
+      desc: p.description ? `<details class="orig-sec"><summary><h4>${zh ? '描述（原文）' : 'Description (as written)'}</h4></summary><p class="desc">${esc(p.description.slice(0, 1500))}</p></details>` : '',
       srcs: `<h4>${zh ? '数据来源' : 'Where this came from'}</h4><ul class="srcs">${srcList(p.links || [])}</ul>`,
     };
   }
@@ -1012,7 +1026,7 @@
   function startPick(cb) {
     picking = true; pickCb = cb;
     pickFromList = phone.matches && document.body.classList.contains('m-list');
-    if (pickFromList) { document.body.classList.remove('m-list'); setViewSwitch(); setTimeout(() => map.invalidateSize(), 0); }
+    if (pickFromList) { document.body.classList.remove('m-list'); setViewSwitch(); topBack(); setTimeout(() => map.invalidateSize(), 0); }
     $('pick-hint').hidden = false;
     map.getContainer().classList.add('picking');
   }
@@ -1219,6 +1233,7 @@
     if (name === 'grid' && f.parentNode !== $('grail')) $('grail').appendChild(f);
     if (name === 'map' && f.parentNode !== $('rail')) $('rail').insertBefore(f, $('results'));
     safeSet('view', name);
+    topBack();
     if (name === 'map') setTimeout(() => map.invalidateSize(), 0);
     if (name === 'gaps') renderGaps();
     if (name === 'sources') renderSources();
@@ -1230,6 +1245,7 @@
   }
   document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
     if (t.dataset.view !== curView) track('tab', { t: t.dataset.view });
+    else if (curView === 'grid' && pageId != null) { leavePage(); return; }  // the phone page has no Back bar
     showView(t.dataset.view);
   });
 

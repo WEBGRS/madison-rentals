@@ -44,7 +44,8 @@
       // Card picture: the first real photo (AppFolio's smaller size), else a floor plan drawing
       var ph = (p.photos || []).filter(function (u) { return !/no_photo/.test(u); })[0];
       var fp = p.listings.filter(function (x) { return x.fpimg; })[0];
-      p._im = ph ? ph.replace(/(images\.cdn\.appfolio\.com\/.*)\/large\.jpg$/, '$1/medium.jpg') : fp ? fp.fpimg : null;
+      fp = fp ? fp.fpimg : p.fps && p.fps.length ? p.fps[0].img : null;
+      p._im = ph ? ph.replace(/(images\.cdn\.appfolio\.com\/.*)\/large\.jpg$/, '$1/medium.jpg') : fp;
       p._imfp = !ph && !!fp;
       var best = null;
       stops.forEach(function (s) { var d = miles([p.lat, p.lng], [s[0], s[1]]); if (best == null || d < best) best = d; });

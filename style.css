@@ -280,6 +280,14 @@ input[type=range] { width: 100%; accent-color: var(--lake); }
 .issues p { margin: 0 0 4px; }
 .notes { margin: 0; padding-left: 18px; font-size: 14px; color: var(--ink-2); }
 .desc { font-size: 14px; color: var(--ink-2); white-space: pre-line; }
+/* Landlord's own wording, folded */
+.orig > summary, .orig-sec > summary { cursor: pointer; list-style: none; }
+.orig > summary::-webkit-details-marker, .orig-sec > summary::-webkit-details-marker { display: none; }
+.orig > summary { display: inline-block; font-size: 12px; font-weight: 600; color: var(--lake-ink); }
+.orig > summary::after, .orig-sec > summary h4::after { content: "▸"; display: inline-block; margin-left: 5px; font-size: 11px; color: var(--ink-2); transition: transform .15s; }
+.orig[open] > summary::after, .orig-sec[open] > summary h4::after { transform: rotate(90deg); }
+.orig-sec > summary h4 { display: inline-block; }
+.orig-sec > .desc { margin-top: 0; }
 .srcs { padding-left: 18px; font-size: 14px; margin: 0; }
 
 /* Gaps view */
@@ -461,6 +469,8 @@ textarea.draft { width: 100%; min-height: 260px; font: 13px/1.5 "Instrument Sans
 .fp-thumb img { display: block; width: 100%; height: 96px; object-fit: contain; background: #fff; }
 .fp-thumb span { padding: 0 8px 6px; font-size: 12px; font-weight: 600; color: #1D2430; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fp-thumb:hover, .fp-thumb:focus-visible { border-color: var(--lake); }
+.fp-more { border: 1px solid var(--line); border-radius: var(--radius-s); margin-bottom: 8px; padding-top: 8px; }
+.fp-more-h { padding: 0 12px 8px; font-size: 14px; font-weight: 600; }
 .fp-link { border: 0; background: none; padding: 0; margin-left: 8px; font-size: 12px; color: var(--lake-ink); text-decoration: underline; text-underline-offset: 2px; cursor: zoom-in; }
 .lightbox { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 24px; background: rgba(10, 14, 20, .82); }
 .lightbox figure { margin: 0; max-width: min(1000px, 100%); display: grid; gap: 10px; justify-items: center; }
@@ -534,5 +544,8 @@ body:not(.v-map) .viewswitch { display: none; }
   .gp-side { position: static; }
   .gp-map { height: 220px; }
 }
-/* The Star / Feedback pill steps aside for the full-screen details view on phones */
-@media (max-width: 860px) { body.m-drawer { --wgfb-display: none; } }
+/* Phones: no Star / Feedback pill, no Back bar (the system back gesture and the All rentals tab do that) */
+@media (max-width: 860px) {
+  :root { --wgfb-display: none; }
+  .gp-bar { display: none; }
+}
