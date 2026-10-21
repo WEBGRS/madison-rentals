@@ -548,4 +548,8 @@ body:not(.v-map) .viewswitch { display: none; }
 @media (max-width: 860px) {
   :root { --wgfb-display: none; }
   .gp-bar { display: none; }
+  /* Only what a renter reads on a small screen */
+  .cimg { aspect-ratio: 16 / 9; }
+  .card .lnd, .card .mi, .walk .mi, .overview .cnt, .prov, .units .pv, .units .pbd { display: none; }
+  body.none-saved #f-saved, body.none-saved .switch:has(#f-saved) { display: none; }
 }

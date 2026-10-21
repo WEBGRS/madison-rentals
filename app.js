@@ -58,13 +58,13 @@
   };
   const ZHF = {
     dist_lbl: v => `距离 ≤ <b>${v} 英里</b>`, count: n => `${n} 个物业`,
-    from: '起', per_person: '/人', per_unit: '/月', no_price: '未公开价格', walk: (m, mi, r) => `步行约 <b>${m} 分钟</b>（直线 ${mi} 英里）到 ${r}`,
+    from: '起', per_person: '/人', per_unit: '/月', no_price: '未公开价格', walk: (m, mi, r) => `步行约 <b>${m} 分钟</b><span class="mi">（直线 ${mi} 英里）</span>到 ${r}`,
     not_stated: '未说明',
   };
   const ENF = {
     dist_lbl: v => `Within <b>${v} mi</b> of`, count: n => `${n} ${n === 1 ? 'property' : 'properties'}`,
     from: 'from', per_person: '/person', per_unit: '/mo', no_price: 'No price posted',
-    walk: (m, mi, r) => `About <b>${m} min</b> walk (${mi} mi straight line) to ${r}`,
+    walk: (m, mi, r) => `About <b>${m} min</b> walk<span class="mi"> (${mi} mi straight line)</span> to ${r}`,
     not_stated: 'Not stated',
   };
   let lang = safeGet('lang') || ((navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en');
@@ -131,6 +131,7 @@
       b.setAttribute('aria-label', starTitle(on) + (n ? ' · ' + n : ''));
     });
     $('saved-n').textContent = saved.length ? ` (${saved.length})` : '';
+    document.body.classList.toggle('none-saved', !saved.length && !state.saved);
   }
   // Keep a star click from opening the listing
   document.addEventListener('click', e => {
@@ -454,7 +455,7 @@
 
   // Lines and tags shared by the map's list and the card grid; what is missing shows only in a property's detail
   const subHTML = p => (p.name && p.address ? `<span>${esc(p.address)}</span>` : '')
-    + `<span>${p.landlord ? esc(p.landlord) + ' · ' : ''}<span class="nw">${distLabel(p._d)}</span></span>`
+    + `<span>${p.landlord ? `<span class="lnd">${esc(p.landlord)} · </span>` : ''}<span class="nw"><span class="mi">${lang === 'zh' ? `${p._d.toFixed(2)} 英里 · ` : `${p._d.toFixed(2)} mi · `}</span>${lang === 'zh' ? `步行 ${walkMin(p._d)} 分钟` : `${walkMin(p._d)} min walk`}</span></span>`
     + placeDistLine(p);
   const tagsHTML = p => `${sortChip(p)}${bedsSummary(p._beds) ? `<span class="tag">${esc(bedsSummary(p._beds))}</span>` : ''}${p._2728 ? '<span class="tag t2728">2027–28</span>' : ''}${p._leased ? `<span class="tag">${lang === 'zh' ? '已租满' : 'Fully leased'}</span>` : ''}`;
   const emptyText = () => searchErr ? esc(apiErrText(searchErr)) : lang === 'zh' ? '没有符合条件的物业。放宽价格或距离，或点“重置”。' : 'Nothing matches. Widen the price or distance, or press Reset.';
@@ -719,10 +720,10 @@
         : x.basis === 'bed' ? (zh ? '每人价' : 'per person') : (x.beds > 1 ? (unv ? (zh ? '整套价？' : 'whole unit?') : (zh ? '整套价' : 'whole unit')) : '');
       // Why a price counts as per person or whole unit: a tooltip on the label, not a tag of its own
       const rent = x.rent ? money(x.rent) + (x.rent_max && x.rent_max !== x.rent ? '–' + money(x.rent_max) : '') + (basisLbl ? `<div class="basis ${x.basis}"${x.shared || !x.bv ? '' : ` title="${esc(bvTitle(x.bv))}"`}>${basisLbl}</div>` : '') : `<span class="nostate">${zh ? '未公开' : 'not posted'}</span>`;
-      const per = x.per_bed && (x.pb_div || (x.shared && x.per_bed !== x.rent)) ? `<div class="muted">≈ ${money(x.per_bed)}${zh ? '/人' : '/person'}${x.pb_div ? ` (÷${x.beds})` : ''}</div>` : '';
+      const per = x.per_bed && (x.pb_div || (x.shared && x.per_bed !== x.rent)) ? `<div class="muted">≈ ${money(x.per_bed)}${zh ? '/人' : '/person'}${x.pb_div ? `<span class="pbd"> (÷${x.beds})</span>` : ''}</div>` : '';
       const term = x.term && x.term !== 'past date' && !termRedundant(x) ? `<div class="muted">${esc(termLabel(x.term))}</div>` : '';
       return `<tr class="${x.shared ? 'shared' : ''}${LEASED.test(x.status || '') ? ' leased' : ''}">
-        <td class="u-what">${esc(what)}${x.fpimg ? `<button type="button" class="fp-link" data-img="${esc(x.fpimg)}" data-cap="${esc(fpCap(x))}">${zh ? '户型图' : 'Floor plan'}</button>` : ''}<div class="muted src">${esc(PROV[x.src === 'uw_offcampus' ? 'uw' : 'official'][zh ? 1 : 0])}${x.status ? ' · ' + esc(statusLabel(x.status)) : ''}</div></td>
+        <td class="u-what">${esc(what)}${x.fpimg ? `<button type="button" class="fp-link" data-img="${esc(x.fpimg)}" data-cap="${esc(fpCap(x))}">${zh ? '户型图' : 'Floor plan'}</button>` : ''}<div class="muted src"><span class="pv">${esc(PROV[x.src === 'uw_offcampus' ? 'uw' : 'official'][zh ? 1 : 0])}${x.status ? ' · ' : ''}</span>${x.status ? esc(statusLabel(x.status)) : ''}</div></td>
         <td class="u-size">${bb}${x.sqft ? `<div class="muted">${x.sqft.toLocaleString()} ft²</div>` : ''}</td>
         <td class="r u-rent">${rent}${per}</td>
         <td class="u-when">${esc(moveIn(x.avail))}${term}</td>
@@ -765,7 +766,7 @@
     const bedsAll = bedsSummary(bedsOf(ls));
     const terms = [...new Set(ls.map(x => x.term).filter(Boolean))].filter(t => t !== 'past date').slice(0, 2);
     const overview = [ppAll ? (zh ? `${unitMode ? '整套' : '每人'} ${ppAll}` : `${ppAll} ${unitMode ? 'whole unit' : 'per person'}`) : '', bedsAll, zh ? `${ls.length} 个户型` : `${ls.length} listed`, ...terms.map(termLabel)]
-      .filter(Boolean).map(s => `<span>${esc(s)}</span>`).join('');
+      .filter(Boolean).map(s => `<span${/^\d+ (个户型|listed)$/.test(s) ? ' class="cnt"' : ''}>${esc(s)}</span>`).join('');
     const facts = [
       ['utilities', zh ? '含的水电' : 'Included', p.utilities],
       ['tenant_pays', zh ? '租客自付' : 'Tenant pays', p.tenant_pays],
