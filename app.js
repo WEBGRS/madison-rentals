@@ -208,7 +208,7 @@
     renderTags();
   }
   // Clicking the open property again closes it
-  const toggleSel = id => { if (picking) return; if (state.sel === id) closeDrawer(); else select(id, false); };
+  const toggleSel = id => { if (picking) return; if (state.sel === id) dismissDrawer(); else select(id, false); };
 
   // ---------- bus stops (Madison Metro GTFS via scraper/transit.py)
   const TR = window.TRANSIT && window.TRANSIT.stops ? window.TRANSIT : null;
@@ -390,12 +390,16 @@
     const open = document.querySelector('.filters').classList.toggle('open');
     $('ftoggle').setAttribute('aria-expanded', open);
   };
+  function setList(on) {
+    document.body.classList.toggle('m-list', on);
+    setViewSwitch();
+    if (!on) topBack();
+    window.scrollTo(0, 0);
+  }
   $('viewswitch').onclick = () => {
     if (picking) { pickFromList = false; stopPick(); }
-    document.body.classList.toggle('m-list');
-    setViewSwitch();
-    if (!document.body.classList.contains('m-list')) topBack();
-    window.scrollTo(0, 0);
+    setList(!document.body.classList.contains('m-list'));
+    step();
   };
   // Phone top bar slides away while scrolling a list; the map always gets it back (and its new size)
   function topBack() {
@@ -810,7 +814,7 @@
       srcs: `<h4>${zh ? '数据来源' : 'Where this came from'}</h4><ul class="srcs">${srcList(p.links || [])}</ul>`,
     };
   }
-  async function select(id, pan = true, zoom = 0) {
+  async function select(id, pan = true, zoom = 0, quiet = false) {
     state.sel = id;
     const my = ++selSeq;
     let r;
@@ -820,10 +824,12 @@
     const dr = $('drawer');
     dr.innerHTML = `<div class="dhead"><h2>${esc(o.title)}</h2>${o.star}<button class="close" aria-label="Close">×</button></div>
       ${o.addr}${o.overview}${o.contact}${o.walk}${o.bus}${o.photos}${o.units}${o.terms}${o.notes}${o.amen}${o.desc}${o.srcs}`;
+    const wasOpen = !dr.hidden;
     dr.hidden = false;
     document.body.classList.add('m-drawer');
     dr.scrollTop = 0;
-    dr.querySelector('.close').onclick = closeDrawer;
+    dr.querySelector('.close').onclick = dismissDrawer;
+    if (!quiet) step({}, wasOpen && history.state && history.state.sel);  // quiet: Back is restoring it
     document.querySelectorAll('.res.sel').forEach(e => e.classList.remove('sel'));
     const li = document.querySelector(`.res[data-id="${CSS.escape(id)}"]`);
     if (li) { li.classList.add('sel'); if (!pan) li.scrollIntoView({ block: 'nearest' }); }
@@ -847,6 +853,11 @@
     const b = e.target.closest('[data-img]');
     if (b) openLightbox(b.dataset.img, b.dataset.cap);
   });
+  // Closing by hand undoes the step that opened it
+  function dismissDrawer() {
+    if (history.state && history.state.sel && !$('drawer').hidden) history.back();
+    else closeDrawer();
+  }
   function closeDrawer() {
     $('drawer').hidden = true;
     document.body.classList.remove('m-drawer');
@@ -1133,7 +1144,7 @@
     if (!$('lightbox').hidden) closeLightbox();
     else if (picking) stopPick();
     else if (curView === 'grid' && pageId != null) leavePage();
-    else closeDrawer();
+    else dismissDrawer();
   });
 
   $('q').oninput = e => { state.q = e.target.value; render(); };
@@ -1247,7 +1258,28 @@
   document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
     if (t.dataset.view !== curView) track('tab', { t: t.dataset.view });
     else if (curView === 'grid' && pageId != null) { leavePage(); return; }  // the phone page has no Back bar
+    const changed = t.dataset.view !== curView;
     showView(t.dataset.view);
+    if (changed) step();
+  });
+  // ---------- Back: tabs, the map's list and its side panel are history steps; #p=<id> pages are hash steps (hashchange)
+  let restoring = false;
+  function step(extra, replace) {
+    if (restoring) return;
+    const s = Object.assign({ v: curView, list: document.body.classList.contains('m-list'), sel: $('drawer').hidden ? null : state.sel }, extra);
+    try { history[replace ? 'replaceState' : 'pushState'](s, '', location.href); } catch { /* file url */ }
+  }
+  window.addEventListener('popstate', e => {
+    const s = e.state || { v: 'grid' };  // a #p= step: the page lives in the all-rentals view
+    restoring = true;
+    try {
+      if (s.v && s.v !== curView) showView(s.v);
+      if (curView === 'map') {
+        if (!!s.list !== document.body.classList.contains('m-list')) setList(!!s.list);
+        if (!s.sel && !$('drawer').hidden) closeDrawer();
+        else if (s.sel && s.sel !== state.sel) select(s.sel, false, 0, true);
+      }
+    } finally { restoring = false; }
   });
 
   // ---------- gaps view
@@ -1413,4 +1445,5 @@
   }
   const deep = hashId();
   if (deep) { if (curView === 'map') select(deep, false, 17); else { showView('grid'); openPage(deep, false); } }
+  step({}, true);
 })();
