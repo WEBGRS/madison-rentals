@@ -6,7 +6,7 @@
   var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   var listeners = [];
   var ACCENTS = [
-    ['lake', '#2E6F8E', 'Lake blue', '湖蓝'],
+    ['lake', '#1f5d80', 'Lake blue', '湖蓝'],
     ['red', '#C5050C', 'Badger red', '威大红'],
     ['pine', '#2E7D4F', 'Pine green', '松绿'],
     ['dusk', '#6A4FB8', 'Dusk purple', '暮紫'],

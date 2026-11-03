@@ -516,7 +516,7 @@ textarea.draft { width: 100%; min-height: 260px; font: 13px/1.5 "Instrument Sans
 .gpage { flex: 1; min-width: 0; overflow-y: auto; background: var(--paper); }
 body.page-open .grail, body.page-open .gwrap { display: none; }
 .gp-bar { position: sticky; top: 0; z-index: 500; background: var(--paper); padding: 10px 24px; border-bottom: 1px solid var(--line); }
-.back { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 5px 14px; font-weight: 600; font-size: 14px; }
+.back { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 5px 14px; font-weight: 600; font-size: 14px; }
 .gp { display: grid; grid-template-columns: minmax(0, 1fr) 360px; grid-template-areas: "head side" "body side"; gap: 0 28px;
   max-width: 1180px; margin: 0 auto; padding: 20px 24px 64px; align-items: start; }
 .gp-head, .gp-main { grid-area: head; }

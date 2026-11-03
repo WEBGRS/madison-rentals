@@ -1,0 +1,115 @@
+/* Madison Students family look for Rentals (hub tokens, Archivo, pills, soft cards). Loaded after style.css */
+:root {
+  --lake: #1f5d80; --lake-ink: #174a67; --lake-wash: #eaf2f7;
+  --ink: #0f2a3a; --ink-2: #39535f; --paper: #f2f6f9; --card: #ffffff; --line: #e1e8ee;
+  --page: #ffffff;
+  --radius-s: 10px; --radius-l: 20px;
+  --shadow: 0 12px 32px rgba(15, 42, 58, .16);
+  --soft: 0 1px 2px rgba(15, 42, 58, .06), 0 8px 28px rgba(15, 42, 58, .09);
+}
+:root[data-theme="dark"] { --page: var(--paper); --soft: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 28px rgba(0, 0, 0, .35); }
+
+/* Type */
+body { background: var(--page); font-family: var(--ms-font); }
+textarea.draft { font-family: var(--ms-font); }
+h1, h2, .gp h2, .drawer h2 { font-weight: 800; font-variation-settings: "wdth" 112; letter-spacing: -.01em; }
+.card h3, .res h3 { font-weight: 800; font-variation-settings: "wdth" 112; letter-spacing: -.005em; }
+.gp h4, .sgrp h3 { font-weight: 700; }
+
+/* Shared bar + site tabs */
+.ms-top { flex: none; }
+.top { display: block; height: auto; padding: 0; gap: 0; border: 0; background: none; overflow: visible; flex: none; position: relative; z-index: 1000; }
+.top-right { display: flex; align-items: center; gap: 8px; margin: 0; }
+.ap-btn svg { width: 16px; height: 16px; }
+.tabs { display: flex; gap: 22px; height: 100%; }
+.tab {
+  padding: 0; height: 100%; border: 0; border-radius: 0; background: none; border-bottom: 2px solid transparent;
+  font: 600 15px/1 var(--ms-font); color: var(--ink-2); white-space: nowrap;
+}
+.tab:hover { color: var(--ink); border-bottom-color: var(--ms-navy); }
+.tab.active { background: none; color: var(--ink); font-weight: 700; border-bottom-color: var(--ms-navy); }
+.ms-sub .ms-wrap { max-width: none; }
+.ms-top .ms-wrap { max-width: none; }
+
+/* Controls: pills */
+#q, select, .pf-row input { border: 1.5px solid var(--line); border-radius: 10px; background: var(--card); }
+#q { padding: 9px 16px; }
+select { padding: 7px 12px; }
+#q:focus-visible, select:focus-visible, .pf-row input:focus-visible { outline: 3px solid var(--ms-navy); outline-offset: 2px; }
+.chips button, .seg button, .pchip { border: 1.5px solid var(--line); background: var(--card); font-weight: 600; }
+.chips button:hover { border-color: var(--ms-navy); }
+.chips button.on { background: var(--ms-navy); border-color: var(--ms-navy); color: #fff; }
+.seg { border: 1.5px solid var(--line); background: var(--card); }
+.seg button { border: 0; }
+.seg button.on { background: var(--ms-navy); color: #fff; }
+.switch input:checked { background: var(--ms-navy); }
+.checks input[type=checkbox] { accent-color: var(--ms-navy); }
+.ftoggle { border: 1.5px solid var(--line); background: var(--card); border-radius: 10px; padding: 9px 16px; }
+.btn { border: 0; border-radius: 10px; background: var(--ms-navy); color: #fff; font-weight: 700; padding: 8px 18px; }
+.btn:hover { background: var(--ms-navy-2); }
+.btn.ghost { background: var(--card); color: var(--ink); border: 1.5px solid var(--line); }
+.btn.ghost:hover { border-color: var(--ms-navy); background: var(--card); }
+.btn.small { padding: 6px 14px; }
+.back { border: 1.5px solid var(--line); }
+.back:hover { border-color: var(--ms-navy); }
+.pick-hint { background: var(--ms-navy); color: #fff; }
+
+/* Rails and panels */
+.grail, .rail { background: var(--card); }
+.gwrap, .gpage { background: var(--page); }
+.gp-bar { background: var(--page); }
+.gsum { padding-top: 18px; }
+.sbar .st { background: var(--paper); box-shadow: none; }
+button.sbar:hover { background: var(--paper); }
+button.sbar[aria-pressed="true"] { background: var(--card); border: 1.5px solid var(--ms-navy); }
+.ssaved a:hover { background: var(--paper); }
+
+/* Cards: hub surface */
+.card { border: 0; border-radius: var(--radius-l); box-shadow: var(--soft); transition: box-shadow .25s, transform .25s; }
+.card:hover { border: 0; transform: translateY(-3px); box-shadow: 0 2px 4px rgba(15, 42, 58, .06), 0 20px 50px rgba(15, 42, 58, .16); }
+.cimg { border-bottom: 0; }
+.cbody { padding: 12px 14px 14px; }
+.grid { gap: 22px; }
+.card .sub .pd { color: var(--lake-ink); }
+.spot-dot { background: var(--ms-housing); }
+.res:hover, .res.sel { background: var(--paper); }
+.res.sel { box-shadow: inset 3px 0 0 var(--ms-navy); }
+.drawer, .appearance-panel { border: 0; border-radius: var(--radius-l); box-shadow: var(--shadow); }
+.legend { border: 0; border-radius: 14px; box-shadow: var(--soft); }
+.gp-map { border: 0; box-shadow: var(--soft); }
+.gp-side .contact, .bus, .ugroup, .fp-more { border-color: var(--line); }
+.walk, .tag.metric, .overview span:first-child { background: var(--lake-wash); }
+
+/* Tags: small pills, housing blue for the lease-year tag */
+.tag { border-radius: 999px; padding: 1px 8px; background: var(--card); border-color: var(--line); }
+.tag.t2728 { border-color: var(--ms-housing); color: var(--ink); }
+.tag.gap { background: var(--warn-wash); }
+.tag.metric { border-color: transparent; color: var(--lake-ink); }
+
+/* Map selection */
+.price-tag.sel { background: var(--ms-navy); border-color: var(--ms-navy); color: #fff; }
+
+/* Dark mode: shared bar follows the page */
+:root[data-theme="dark"] .ms-top, :root[data-theme="dark"] .ms-sub { background: var(--card); border-color: var(--line); }
+:root[data-theme="dark"] .ms-brand, :root[data-theme="dark"] .ms-nav a[aria-current="page"], :root[data-theme="dark"] .ms-nav a:hover { color: var(--ink); }
+:root[data-theme="dark"] .ms-nav a { color: var(--ink-2); }
+:root[data-theme="dark"] .ms-pill { background: var(--card); color: var(--ink); border-color: var(--line); }
+:root[data-theme="dark"] .ms-menu-list { background: var(--card); border-color: var(--line); }
+:root[data-theme="dark"] .ms-menu-list a { color: var(--ink); }
+:root[data-theme="dark"] .ms-menu-list a:hover { background: var(--paper); }
+:root[data-theme="dark"] .ms-nav a[aria-current="page"], :root[data-theme="dark"] .tab.active, :root[data-theme="dark"] .tab:hover { border-bottom-color: var(--lake); }
+:root[data-theme="dark"] .chips button.on, :root[data-theme="dark"] .seg button.on, :root[data-theme="dark"] .btn:not(.ghost),
+:root[data-theme="dark"] .switch input:checked, :root[data-theme="dark"] .price-tag.sel, :root[data-theme="dark"] .pick-hint { background: var(--lake); border-color: var(--lake); color: var(--on-accent); }
+
+/* Phone */
+@media (max-width: 860px) {
+  .top { padding: 0; overflow: visible; }
+  .tabs { gap: 18px; }
+  .tab { padding: 0; font-size: 15px; }
+  .top-right { position: static; gap: 6px; }
+  .viewswitch { background: var(--ms-navy); color: #fff; }
+  .grid { gap: 16px; }
+}
+@media (max-width: 760px) {
+  .appearance-panel { position: fixed; top: 64px; right: 10px; }
+}

@@ -18,25 +18,38 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<link rel="stylesheet" href="style.css?v=4e006ee9">
-<script src="theme.js?v=e61aaa8e"></script>
+<link rel="stylesheet" href="ms-family.css?v=fd90eead">
+<link rel="stylesheet" href="style.css?v=b9f9f645">
+<link rel="stylesheet" href="ms-site.css?v=62c7b7dd">
+<script src="theme.js?v=1e7501de"></script>
+<script src="ms-family.js?v=2d25eaa7" data-site="housing"></script>
 </head>
 <body>
-<header class="top">
-  <a class="brand" href="./"><span class="wordmark"><span class="wm-city">Madison </span>Rentals</span></a>
-  <nav class="tabs" role="tablist">
-    <button role="tab" class="tab active" data-view="grid" data-i18n="tab_grid">All rentals</button>
-    <button role="tab" class="tab" data-view="map" data-i18n="tab_map">Map</button>
-    <button role="tab" class="tab" data-view="gaps" data-i18n="tab_gaps" hidden>Missing info</button>
-    <button role="tab" class="tab" data-view="sources" data-i18n="tab_sources">Sources</button>
-  </nav>
-  <div class="top-right">
-    <button class="lang ap-btn" id="appearance" aria-label="Appearance"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor"/></svg><span data-i18n="appearance">Appearance</span></button>
-    <button class="lang" id="lang" aria-label="Switch language">中文</button>
-  </div>
-</header>
+<div class="top" id="top">
+  <div class="ms-sub"><div class="ms-wrap">
+    <nav class="tabs" role="tablist">
+      <button role="tab" class="tab active" data-view="grid" data-i18n="tab_grid">All rentals</button>
+      <button role="tab" class="tab" data-view="map" data-i18n="tab_map">Map</button>
+      <button role="tab" class="tab" data-view="gaps" data-i18n="tab_gaps" hidden>Missing info</button>
+      <button role="tab" class="tab" data-view="sources" data-i18n="tab_sources">Sources</button>
+    </nav>
+  </div></div>
+</div>
+<div class="top-right" id="top-right">
+  <button class="ms-pill ap-btn" id="appearance" aria-label="Appearance"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor"/></svg><span class="ms-lbl" data-i18n="appearance">Appearance</span></button>
+  <button class="ms-pill" id="lang" aria-label="Switch language">中文</button>
+</div>
+<script>
+/* Shared top bar above the site tabs; site controls in its action slot */
+(function () {
+  var top = document.getElementById('top');
+  function put() { top.insertBefore(MSFamily.bar, top.firstChild); }
+  MSFamily.actions.appendChild(document.getElementById('top-right'));
+  put();
+  document.addEventListener('DOMContentLoaded', put);
+})();
+</script>
 
 <main id="view-grid" class="view active">
   <aside class="grail" id="grail"><div class="gsum" id="gsum" aria-live="polite"></div></aside>
@@ -180,8 +193,8 @@
 <script src="engine.js?v=8fbaeab4"></script>
 <script src="guard-client.js?v=9af92d3c"></script>
 <script src="acct-sync.js?v=70efc43a"></script>
-<script src="app.js?v=76b84f3d"></script>
-<script src="account.js?v=0ccd0644" data-mount=".top-right" data-class="lang" data-compact="640" defer></script>
+<script src="app.js?v=8eff713d"></script>
+<script src="account.js?v=0ccd0644" data-mount=".top-right" data-class="ms-pill" data-compact="760" defer></script>
 <script src="navhide.js?v=a028b89e" data-nav=".top" data-max="860" data-mode="margin" data-reveal="top" data-ignore=".drawer,.appearance-panel,.lightbox" defer></script>
 <script src="feedback.js?v=f6ff8df4" data-site="rentals" data-star="WEBGRS/madison-rentals" data-float-bottom-narrow="94" data-narrow-max="860" defer></script>
 <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "bac1569834fa4682962ab1c4355c6474"}'></script><!-- End Cloudflare Web Analytics -->

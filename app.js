@@ -77,7 +77,7 @@
     document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
     document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = lang === 'zh' ? (ZH[el.dataset.i18n] || EN_TEXT[el.dataset.i18n]) : EN_TEXT[el.dataset.i18n]; });
     document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = lang === 'zh' ? ZH[el.dataset.i18nPh] : EN_PH[el.dataset.i18nPh]; el.setAttribute('aria-label', el.placeholder); });
-    document.getElementById('lang').textContent = lang === 'zh' ? 'English' : '中文';
+    document.getElementById('lang').textContent = lang === 'zh' ? 'EN' : '中文';
   }
 
   // ---------- helpers
@@ -1483,7 +1483,7 @@
   if (/^(127\.0\.0\.1|localhost)$/.test(location.hostname)) {
     fetch('/api/status').then(r => {
       if (!r.ok) return;
-      const a = Object.assign(document.createElement('a'), { href: '/admin/', className: 'lang', id: 'admin-link', textContent: lang === 'zh' ? '后台' : 'Admin' });
+      const a = Object.assign(document.createElement('a'), { href: '/admin/', className: 'ms-pill', id: 'admin-link', textContent: lang === 'zh' ? '后台' : 'Admin' });
       a.style.textDecoration = 'none';
       document.querySelector('.top-right').prepend(a);
     }).catch(() => { });
