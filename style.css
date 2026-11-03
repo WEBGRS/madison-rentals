@@ -553,3 +553,34 @@ body:not(.v-map) .viewswitch { display: none; }
   .card .lnd, .card .mi, .card .price small, .res .price small, .walk .mi, .overview .cnt, .prov, .units .pv, .units .pbd { display: none; }
   body.none-saved #f-saved, body.none-saved .switch:has(#f-saved) { display: none; }
 }
+/* All rentals, desktop: results summary and saved list below the filters */
+.grail { display: flex; flex-direction: column; }
+.grail .filters { flex: none; }
+.gsum { flex: 1 0 auto; display: grid; align-content: start; gap: 18px; padding: 16px 16px 28px; }
+.gsum:empty { display: none; }
+.sgrp h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--ink-2); display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.sgrp h3 .sc { color: var(--ink); }
+.sbar {
+  display: grid; grid-template-columns: 104px 1fr 40px; align-items: center; gap: 10px; width: 100%;
+  padding: 4px 8px; margin: 0 0 2px; border: 1px solid transparent; border-radius: var(--radius-s);
+  background: none; color: var(--ink); font-size: 13px; line-height: 1.3; text-align: left;
+}
+button.sbar:hover { background: var(--lake-wash); }
+button.sbar[aria-pressed="true"] { background: var(--lake-wash); border-color: var(--lake); font-weight: 600; }
+.sbar .st { height: 8px; border-radius: 999px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; }
+.sbar .st i { display: block; height: 100%; min-width: 2px; border-radius: 999px; background: var(--p0); transition: width .3s ease; }
+.sbar.quiet .st i { background: var(--lake); opacity: .7; }
+.sbar .sn { text-align: right; font-weight: 600; }
+.ssaved { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.ssaved a { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: var(--radius-s); color: var(--ink); text-decoration: none; font-size: 14px; }
+.ssaved a::before { content: "★"; color: var(--p3); font-size: 14px; }
+.ssaved a:hover { background: var(--lake-wash); }
+@media (max-width: 860px) { .gsum { display: none; } }
+@media (prefers-reduced-motion: reduce) { .sbar .st i { transition: none; } }
+
+/* Price on one line: "from $1,250 per person" */
+.price .pu { font-weight: 400; font-size: 12px; color: var(--ink-2); }
+.card .ctop { display: block; }
+.card .price, .res .price { text-align: left; }
+.card .price { margin-top: 2px; }
+.res .price { grid-column: 2; grid-row: auto; }

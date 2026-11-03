@@ -14,7 +14,7 @@
 
   function get(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }
   function put(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage blocked */ } }
-  function mode() { return get(KT, 'light'); }
+  function mode() { return get(KT, 'light') === 'dark' ? 'dark' : 'light'; }
   function accent() { return get(KA, 'lake'); }
   function basemap() { return get(KB, 'color'); }
   function resolved() { var t = mode(); return t === 'auto' ? (mq && mq.matches ? 'dark' : 'light') : t; }
@@ -42,7 +42,7 @@
 
     function render() {
       var z = zh(), m = mode(), a = accent(), bm = basemap();
-      var modes = [['light', 'Light', '亮色'], ['dark', 'Dark', '暗色'], ['auto', 'System', '跟随系统']];
+      var modes = [['light', 'Light', '亮色'], ['dark', 'Dark', '暗色']];
       var maps = [['color', 'Color', '彩色'], ['gray', 'Gray', '灰色'], ['satellite', 'Satellite', '卫星']];
       panel.innerHTML =
         '<div class="ap-row"><span class="ap-lbl">' + (z ? '主题' : 'Theme') + '</span><div class="seg ap-seg">' +

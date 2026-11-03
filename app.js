@@ -131,6 +131,7 @@
       b.setAttribute('aria-label', starTitle(on) + (n ? ' · ' + n : ''));
     });
     $('saved-n').textContent = saved.length ? ` (${saved.length})` : '';
+    if (typeof renderSum === 'function') renderSum();
     document.body.classList.toggle('none-saved', !saved.length && !state.saved);
   }
   // Keep a star click from opening the listing
@@ -366,7 +367,47 @@
     renderList();
     renderMarkers();
     setViewSwitch();
+    renderSum();
   }
+
+  // ---------- all rentals, desktop: what the current results look like, and the saved ones
+  const SUM_LBL = { bed: ['< $900', '$900–1,199', '$1,200–1,499', '$1,500–1,899', '$1,900+'], unit: ['< $1,500', '$1,500–2,499', '$2,500–3,499', '$3,500–4,999', '$5,000+'] };
+  function renderSum() {
+    const box = $('gsum');
+    if (!box || !searched) return;
+    const zh = lang === 'zh', BK = state.basis === 'bed' ? BUCKETS : BUCKETS_UNIT, [lo, hi] = priceBounds();
+    const cnt = BK.map(() => 0);
+    let none = 0;
+    const walks = [0, 0, 0, 0];
+    markerRows.forEach(([, lat, lng, v]) => {
+      if (v == null) none++; else cnt[BK.findIndex(b => v >= b[0] && v < b[1])]++;
+      const m = walkMin(miles(state.refPt, [lat, lng]));
+      walks[m <= 10 ? 0 : m <= 20 ? 1 : m <= 30 ? 2 : 3]++;
+    });
+    const max = Math.max(1, ...cnt, none), wmax = Math.max(1, ...walks);
+    const range = b => [Math.max(b[0], lo), Math.min(b[1], hi)];
+    const bars = BK.map((b, i) => {
+      const [a, z] = range(b), on = state.priceMin === a && state.price === z && !(a === lo && z === hi);
+      return `<button type="button" class="sbar" data-lo="${a}" data-hi="${z}" aria-pressed="${on}"><span class="sl">${SUM_LBL[state.basis][i]}</span><span class="st"><i style="width:${(cnt[i] / max * 100).toFixed(1)}%;background:var(--${b[2]})"></i></span><span class="sn">${cnt[i]}</span></button>`;
+    }).join('') + (none ? `<div class="sbar quiet"><span class="sl">${F().no_price}</span><span class="st"><i style="width:${(none / max * 100).toFixed(1)}%"></i></span><span class="sn">${none}</span></div>` : '');
+    const WL = zh ? ['10 分钟内', '10–20 分钟', '20–30 分钟', '30 分钟以上'] : ['10 min or less', '10–20 min', '20–30 min', 'Over 30 min'];
+    const wbars = WL.map((l, i) => `<div class="sbar quiet"><span class="sl">${l}</span><span class="st"><i style="width:${(walks[i] / wmax * 100).toFixed(1)}%"></i></span><span class="sn">${walks[i]}</span></div>`).join('');
+    const sv = saved.slice(-8).reverse();
+    const missing = sv.filter(id => !names.has(id));
+    if (missing.length) DS.peek(missing).then(r => { r.rows.forEach(([i, nm]) => names.set(i, nm)); missing.forEach(i => { if (!names.has(i)) names.set(i, ''); }); renderSum(); }).catch(() => missing.forEach(i => names.set(i, '')));
+    const savedHTML = sv.length ? `<section class="sgrp"><h3>${zh ? '已收藏' : 'Saved'} <span class="sc">${saved.length}</span></h3><ol class="ssaved">${sv.map(id => `<li><a href="#p=${encodeURIComponent(id)}">${esc(names.get(id) || '…')}</a></li>`).join('')}</ol></section>` : '';
+    box.innerHTML = `<section class="sgrp"><h3>${state.basis === 'bed' ? (zh ? '每人价格' : 'Price per person') : (zh ? '整套价格' : 'Whole-unit price')}</h3>${bars}</section>`
+      + `<section class="sgrp"><h3>${zh ? `步行到 ${esc(state.ref)}` : `Walk to ${esc(state.ref)}`}</h3>${wbars}</section>` + savedHTML;
+  }
+  $('gsum').addEventListener('click', e => {
+    const b = e.target.closest('.sbar[data-lo]');
+    if (!b) return;
+    const [lo, hi] = priceBounds();
+    const on = b.getAttribute('aria-pressed') === 'true';
+    state.priceMin = on ? lo : +b.dataset.lo; state.price = on ? hi : +b.dataset.hi;
+    $('price-min').value = state.priceMin; $('price').value = state.price;
+    render();
+  });
   async function loadMore() {
     const my = seq;
     try {
@@ -433,19 +474,23 @@
     $('price-min').value = lo; $('price').value = hi;
   }
 
+  // Price as one line: "from ≈$1,250 per person"
+  const priceLine = (v, pre, en, zhw) => lang === 'zh'
+    ? `<span class="pu">${zhw}</span> <b>${pre}${money(v)}</b> <span class="pu">起</span>`
+    : `<span class="pu">from</span> <b>${pre}${money(v)}</b> <span class="pu">${en}</span>`;
   function priceHTML(p) {
     const zh = lang === 'zh';
     if (state.basis === 'unit') {
       return p._minUnit != null
-        ? `<div class="price" title="${zh ? '整套月租（按人计价的按人数相加）' : 'Monthly rent for the whole unit (per-person prices added up)'}">${money(p._minUnit)}<small>${zh ? '整套起' : 'whole unit, from'}</small></div>`
+        ? `<div class="price" title="${zh ? '整套月租（按人计价的按人数相加）' : 'Monthly rent for the whole unit (per-person prices added up)'}">${priceLine(p._minUnit, '', 'whole unit', '整套')}</div>`
         : `<div class="price none">${F().no_price}</div>`;
     }
     if (p._minBed != null) {
       const tip = (p._minBedDiv ? (zh ? '整套租金 ÷ 卧室数' : 'Whole-unit rent ÷ bedrooms') : (zh ? '每人价格' : 'Per-person price'))
         + (p._minBedUnv ? (zh ? '；未核实是否整套价' : '; not confirmed as a whole-unit price') : '');
-      return `<div class="price" title="${esc(tip)}">${p._minBedDiv ? '≈' : ''}${money(p._minBed)}<small>${zh ? '每人起' : 'per person, from'}</small></div>`;
+      return `<div class="price" title="${esc(tip)}">${priceLine(p._minBed, p._minBedDiv ? '≈' : '', 'per person', '每人')}</div>`;
     }
-    if (p._minRent != null) return `<div class="price">${money(p._minRent)}<small>${zh ? '每月起' : 'per month, from'}</small></div>`;
+    if (p._minRent != null) return `<div class="price">${priceLine(p._minRent, '', 'per month', '每月')}</div>`;
     return `<div class="price none">${F().no_price}</div>`;
   }
   const distLabel = mi => lang === 'zh' ? `${mi.toFixed(2)} 英里 · 步行 ${walkMin(mi)} 分钟` : `${mi.toFixed(2)} mi · ${walkMin(mi)} min walk`;
@@ -1242,7 +1287,7 @@
     document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
     ['grid', 'map', 'gaps', 'sources'].forEach(v => document.body.classList.toggle('v-' + v, v === name));
     const f = document.querySelector('.filters');
-    if (name === 'grid' && f.parentNode !== $('grail')) $('grail').appendChild(f);
+    if (name === 'grid' && f.parentNode !== $('grail')) $('grail').insertBefore(f, $('gsum'));
     if (name === 'map' && f.parentNode !== $('rail')) $('rail').insertBefore(f, $('results'));
     safeSet('view', name);
     topBack();
